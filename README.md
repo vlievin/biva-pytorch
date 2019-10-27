@@ -37,7 +37,7 @@ python run_deepvae.py
 ### install package
 
 ```bash
-pip install biva-pytorch
+pip install git+https://github.com/vlievin/biva-pytorch.git
 ```
 
 ### build deep VAEs

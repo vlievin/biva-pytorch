@@ -1,48 +1,3 @@
-# BIVA (PyTorch)
-
-Official PyTorch BIVA implementation (BIVA: A Very Deep Hierarchy of Latent Variables forGenerative Modeling) for binarized MNIST. The original Tensorflow implementation can be found [here](https://github.com/larsmaaloee/BIVA).
-
-**For the sake of clarity, this version slightly differs from the original Tensorflow implementation**
-
-**Coming soon: natural images architecture and experiment**
-
-
-## run the binary MNIST experiment
-
-```bash
-python run_deepvae.py
-```
-
-## Citation
-
-```
-@article{maale2019biva,
-    title={BIVA: A Very Deep Hierarchy of Latent Variables for Generative Modeling},
-    author={Lars Maaløe and Marco Fraccaro and Valentin Liévin and Ole Winther},
-    year={2019},
-    eprint={1902.02102},
-    archivePrefix={arXiv},
-    primaryClass={stat.ML}
-}
-```
-
-## Pip package
-
-### install requirements
-
-* `pytorch 1.3.0`
-* `torchvision`
-* `matplotlib`
-
-### install package
-
-```bash
-pip install biva-pytorch
-```
-
-### build deep VAEs
-
-```python
 import torch
 from torch.distributions import Bernoulli
 
@@ -76,4 +31,3 @@ data = model(x)  # data = {'x_' : p(x|z), z \sim q(z|x), 'kl': [kl_z1, kl_z2]}
 # sample from prior
 data = model.sample_from_prior(N=16)  # data = {'x_' : p(x|z), z \sim p(z)}
 samples = Bernoulli(logits=data['x_']).sample()
-```

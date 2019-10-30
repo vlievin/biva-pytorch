@@ -141,7 +141,7 @@ for epoch in range(1, opt.epochs + 1):
 
     # tensorboard logging
     train_summary.log(train_writer, global_step)
-    eval_summary.log(train_writer, global_step)
+    eval_summary.log(valid_writer, global_step)
 
 # load best model
 load_model(ema.model, logdir)

@@ -7,16 +7,13 @@ import numpy as np
 import torch
 from torch.distributions import Bernoulli
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from biva.data import get_binmnist_datasets
 from biva.evaluation import VariationalInference
 from biva.model import DeepVae, get_deep_vae_mnist
-from biva.utils import LowerBoundedExponentialLR, training_step, test_step, summary2logger, save_model, load_model, sample_model
-
-from booster.data import Aggregator
-from booster.utils import EMA
+from biva.utils import LowerBoundedExponentialLR, Aggregator, training_step, test_step, summary2logger, save_model, \
+    load_model, sample_model, EMA
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--root', default='runs/', help='directory to store training logs')
@@ -39,18 +36,12 @@ opt = parser.parse_args()
 # set random seed, set run-id, init log directory and save config
 torch.manual_seed(opt.seed)
 np.random.seed(opt.seed)
-run_id = f"{opt.dataset}-{opt.model_type}-seed{opt.seed}"
-if len(opt.id):
-    run_id += f"-{opt.id}"
+run_id = f"{opt.dataset}-{opt.model_type}-seed{opt.seed}{opt.id}"
 logdir = os.path.join(opt.root, run_id)
 if not os.path.exists(logdir):
     os.makedirs(logdir)
 with open(os.path.join(logdir, 'config.json'), 'w') as fp:
     fp.write(json.dumps(vars(opt)))
-
-# define tensorboard writers
-train_writer = SummaryWriter(os.path.join(logdir, 'train'))
-valid_writer = SummaryWriter(os.path.join(logdir, 'valid'))
 
 # load data
 if opt.dataset == 'binmnist':
@@ -122,7 +113,7 @@ for epoch in range(1, opt.epochs + 1):
         train_agg.update(diagnostics)
         ema.update()
         global_step += 1
-    train_summary = train_agg.data.to('cpu')
+    train_summary = train_agg.summarize()
 
     # evaluation
     val_agg.initialize()
@@ -130,7 +121,7 @@ for epoch in range(1, opt.epochs + 1):
         x = x.to(opt.device)
         diagnostics = test_step(x, ema.model, evaluator, **kwargs)
         val_agg.update(diagnostics)
-    eval_summary = val_agg.data.to('cpu')
+    eval_summary = val_agg.summarize()
 
     # keep best model
     best_elbo = save_model(ema.model, eval_summary, global_step, epoch, best_elbo, logdir)
@@ -138,10 +129,6 @@ for epoch in range(1, opt.epochs + 1):
     # logging
     summary2logger(train_logger, train_summary, global_step, epoch)
     summary2logger(eval_logger, eval_summary, global_step, epoch, best_elbo)
-
-    # tensorboard logging
-    train_summary.log(train_writer, global_step)
-    eval_summary.log(train_writer, global_step)
 
 # load best model
 load_model(ema.model, logdir)
@@ -160,6 +147,6 @@ for x in tqdm(test_loader, desc='iw test epoch'):
     x = x.to(opt.device)
     diagnostics = test_step(x, ema.model, iw_evaluator, **kwargs)
     test_agg.update(diagnostics)
-test_summary = test_agg.data.to('cpu')
+test_summary = test_agg.summarize()
 
 summary2logger(test_logger, test_summary, best_elbo[1], best_elbo[2], None)

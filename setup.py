@@ -22,6 +22,8 @@ setuptools.setup(
         'torch',
         'tqdm',
         'numpy',
-        'matplotlib'
+        'matplotlib',
+        'tensorboard',
+        'booster-pytorch'
     ],
 )

@@ -73,7 +73,7 @@ class DeepVae(nn.Module):
         self.stages = nn.ModuleList(stages_)
 
         # output convolution
-        tensor_shp = self.stages[0].forward_shape['d']
+        tensor_shp = self.stages[0].forward_shape
         if features_out is None:
             features_out = self.input_tensor_shape[1]
         conv_obj = nn.Conv2d if len(tensor_shp) == 4 else nn.Conv1d
@@ -108,13 +108,13 @@ class DeepVae(nn.Module):
             posteriors = [None for _ in self.stages]
 
         output_data = DataCollector()
-        x = {}
+        x = None
         for posterior, stage in zip(posteriors[::-1], self.stages[::-1]):
             x, data = stage(x, posterior, **kwargs)
             output_data.extend(data)
 
         # output convolution
-        x = self.conv_out(x['d'])
+        x = self.conv_out(x)
 
         # sort data: [z1, z2, ..., z_L]
         output_data = output_data.sort()

@@ -46,7 +46,7 @@ class DeterministicBlocks(nn.Module):
         self.input_shape = tensor_shp
         layers = []
         hidden_shapes = []
-        aux_shape = self._expand_aux(len(convolutions), aux_shape)
+        aux_shape = self._expand_aux(convolutions, aux_shape)
 
         assert len(aux_shape) >= len(convolutions)
 
@@ -63,13 +63,13 @@ class DeterministicBlocks(nn.Module):
         self.hidden_shapes = hidden_shapes
 
     @staticmethod
-    def _expand_aux(length: int, aux: Optional[List]):
+    def _expand_aux(layers: List, aux: Optional[List]):
         if aux is None:
-            aux = [None] * length
+            aux = [None] * len(layers)
 
         # repeat aux until it matches self.layers in length
-        if len(aux) < length:
-            aux = aux * ((length + len(aux) - 1) // len(aux))
+        if len(aux) < len(layers):
+            aux = aux * ((len(layers) + len(aux) - 1) // len(aux))
 
         return aux
 
@@ -79,7 +79,7 @@ class DeterministicBlocks(nn.Module):
         :param aux: list of auxiliary inputs
         :return: output tensor, activations
         """
-        aux = self._expand_aux(len(self.layers), aux)
+        aux = self._expand_aux(self.layers, aux)
         hidden = []
         for layer, a in zip(self.layers, aux):
             x = layer(x, a, **kwargs)
@@ -449,6 +449,7 @@ class BivaIntermediateStage(nn.Module):
         """
 
         d = data.get('d', None)
+        aux = data.get('aux', None)
 
         if posterior is not None:
             # sample posterior and compute KL using prior
@@ -504,7 +505,6 @@ class BivaIntermediateStage(nn.Module):
             z = torch.cat([z_bu_p, z_td_p], 1)
 
         # pass through convolutions
-        aux = data.get('aux', None)
         d, skips = self.p_convs(z, aux=aux)
 
         # gather data
@@ -638,6 +638,7 @@ class BivaTopStage(nn.Module):
         :return: (hidden state, dict('kl': [kl], **auxiliary) )
         """
         d = data.get('d', None)
+        aux = data.get('aux', None)
 
         # sample p(z | d)
         z_p, p_data = self.stochastic(d, inference=False, **kwargs)
@@ -651,7 +652,6 @@ class BivaTopStage(nn.Module):
             z = z_p
 
         # pass through convolutions
-        aux = data.get('aux', None)
         d, skips = self.p_convs(z, aux=aux)
 
         output_data = {'d': d, 'aux': skips}

@@ -10,10 +10,7 @@ Official PyTorch BIVA implementation (BIVA: A Very Deep Hierarchy of Latent Vari
 ## run the binary MNIST experiment
 
 ```bash
-conda create --name biva python=3.7
-conda activate biva
-pip install -r requirements.txt
-python run_deepvae.py --device cuda
+python run_deepvae.py
 ```
 
 ## Citation
@@ -36,8 +33,6 @@ python run_deepvae.py --device cuda
 * `pytorch 1.3.0`
 * `torchvision`
 * `matplotlib`
-* `tensorboard`
-* `booster-pytorch==0.0.1`
 
 ### install package
 

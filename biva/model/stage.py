@@ -87,56 +87,7 @@ class DeterministicBlocks(nn.Module):
         return x, hidden
 
 
-class Stage(nn.Module):
-    def __init__(self, input_shape: Dict[str, Tuple[int]], *args, **kwargs):
-        """
-        Define a stage of a hierarchical model.
-        In a VAE setting, a stage defines:
-        * the latent variable z_i
-        * the encoder q(z_i | h_{q<i})
-        * the decoder p(z_{i-1} | z_i)
-        """
-        super().__init__()
-        self._input_shape = input_shape
-
-    @property
-    def input_shape(self) -> Dict[str, Tuple[int]]:
-        """size of the input tensors for the inference path"""
-        return self._input_shape
-
-    @property
-    def output_shape(self) -> Dict[str, Tuple[int]]:
-        """size of the output tensors for the inference path"""
-        raise NotImplementedError
-
-    @property
-    def forward_shape(self) -> Tuple[int]:
-        """size of the output tensor for the generative path"""
-        raise NotImplementedError
-
-    def infer(self, data: Dict[str, Tensor], **kwargs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        """
-        Perform a forward pass through the inference layers and sample the posterior.
-
-        :param data: input data
-        :param kwargs: additional parameters passed to the stochastic layer
-        :return: (output data, variational data)
-        """
-        raise NotImplementedError
-
-    def forward(self, data: dict, posterior: Optional[dict], **kwargs) -> Tuple[
-        Dict, Dict[str, List]]:
-        """
-        Perform a forward pass through the generative model and compute KL if posterior data is available
-
-        :param data: data from the above stage forward pass
-        :param posterior: dictionary representing the posterior from same stage inference pass
-        :return: (dict('d' : d, 'aux : [aux]), dict('kl': [kl], **auxiliary) )
-        """
-        raise NotImplementedError
-
-
-class VaeStage(Stage):
+class VaeStage(nn.Module):
     def __init__(self,
                  input_shape: Dict[str, Tuple[int]],
                  convolutions: List[Tuple[int]],
@@ -161,10 +112,12 @@ class VaeStage(Stage):
         :param Block: Block constructor
         :param kwargs: others arguments passed to the block constructors (both convolutions and stochastic)
         """
-        super().__init__(input_shape)
+        super().__init__()
 
         tensor_shp = input_shape.get('x')
         aux_shape = input_shape.get('aux', None)
+
+        self._input_shape = input_shape
 
         # define inference convolutional blocks
         in_residual = not bottom_layer
@@ -184,6 +137,11 @@ class VaeStage(Stage):
 
         self._output_shape = {'x': z_shape, 'aux': [tensor_shp]}
         self._forward_shape = {'d': self.p_convs.output_shape, 'aux': self.p_convs.hidden_shapes}
+
+    @property
+    def input_shape(self) -> Dict[str, Tuple[int]]:
+        """size of the input tensors for the inference path"""
+        return self._input_shape
 
     @property
     def output_shape(self) -> Dict[str, Tuple[int]]:
@@ -278,7 +236,7 @@ class LvaeStage(VaeStage):
         conv = convolutions[-1]
         if isinstance(conv, list):
             conv = [conv[0], conv[1], 1, conv[-1]]
-        self.merge = Block(top_shape, conv, aux_shape=aux_shape, transposed=False, in_residual=True, dropout=dropout,
+        self.merge = Block(top_shape, conv, aux_shape=aux_shape, transposed=False, in_residual=True, dropout=0,
                            **kwargs)
 
     def infer(self, data: Dict[str, Tensor], **kwargs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
@@ -332,7 +290,7 @@ class LvaeStage(VaeStage):
         return output_data, loss_data
 
 
-class BivaIntermediateStage(Stage):
+class BivaIntermediateStage(nn.Module):
     def __init__(self,
                  input_shape: Dict[str, Tuple[int]],
                  convolutions: List[Tuple[int]],
@@ -362,7 +320,8 @@ class BivaIntermediateStage(Stage):
         :param aux_shape: auxiliary input tensor shape as a tuple of integers (B, H, *D)
         :param kwargs: others arguments passed to the block constructors (both convolutions and stochastic)
         """
-        super().__init__(input_shape)
+        super().__init__()
+
 
         if 'x' in input_shape.keys():
             bu_shp = td_shp = input_shape.get('x')
@@ -380,6 +339,8 @@ class BivaIntermediateStage(Stage):
             td_stochastic['block'] = td_block
         else:
             bu_stochastic = td_stochastic = stochastic
+
+        self._input_shape = input_shape
 
         # define inference convolutional blocks
         in_residual = not bottom_layer
@@ -407,7 +368,7 @@ class BivaIntermediateStage(Stage):
         conv = convolutions[-1]
         if isinstance(conv, list):
             conv = [conv[0], conv[1], 1, conv[-1]]
-        self.merge = Block(top_tensor_shp, conv, aux_shape=aux_shape, transposed=False, in_residual=True, dropout=dropout,
+        self.merge = Block(top_tensor_shp, conv, aux_shape=aux_shape, transposed=False, in_residual=True, dropout=0,
                            **kwargs)
 
         # define the condition p(z_bu | z_td, ...)
@@ -430,6 +391,11 @@ class BivaIntermediateStage(Stage):
                               'aux': [aux_shape]}
 
         self._forward_shape = {'d': self.p_convs.output_shape, 'aux': self.p_convs.hidden_shapes}
+
+    @property
+    def input_shape(self) -> Dict[str, Tuple[int]]:
+        """size of the input tensors for the inference path"""
+        return self._input_shape
 
     @property
     def output_shape(self) -> Dict[str, Tuple[int]]:
@@ -472,7 +438,7 @@ class BivaIntermediateStage(Stage):
 
         return {'x_bu': z_bu, 'x_td': x_td, 'aux': [aux]}, {'z_bu': z_bu, 'bu': bu_q_data, 'td': td_q_data}
 
-    def forward(self, data: Dict, posterior: Optional[dict], debugging: bool = False, **kwargs) -> Tuple[
+    def forward(self, data:Dict, posterior: Optional[dict], debugging: bool = False, **kwargs) -> Tuple[
         Dict, Dict[str, List[Tensor]]]:
         """
         Perform a forward pass through the generative model and compute KL if posterior data is available
@@ -572,7 +538,7 @@ class BivaTopStage_simpler(VaeStage):
         return super().infer(data, **kwargs)
 
 
-class BivaTopStage(Stage):
+class BivaTopStage(nn.Module):
     def __init__(self, input_shape: Dict[str, Tuple[int]],
                  convolutions: List[Tuple[int]],
                  stochastic: Union[Dict, Tuple[Dict]],
@@ -600,12 +566,14 @@ class BivaTopStage(Stage):
         :param aux_shape: auxiliary input tensor shape as a tuple of integers (B, H, *D)
         :param kwargs: others arguments passed to the block constructors (both convolutions and stochastic)
         """
-        super().__init__(input_shape)
+        super().__init__()
         top_layer = True
 
         bu_shp = input_shape.get('x_bu')
         td_shp = input_shape.get('x_td')
         aux_shape = input_shape.get('aux')
+
+        self._input_shape = input_shape
 
         # define inference BU and TD paths
         in_residual = not bottom_layer
@@ -688,6 +656,11 @@ class BivaTopStage(Stage):
 
         output_data = {'d': d, 'aux': skips}
         return output_data, loss_data
+
+    @property
+    def input_shape(self) -> Dict[str, Tuple[int]]:
+        """size of the input tensors for the inference path"""
+        return self._input_shape
 
     @property
     def output_shape(self) -> Dict[str, Tuple[int]]:

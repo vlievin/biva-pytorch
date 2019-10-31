@@ -143,6 +143,8 @@ class VaeStage(Stage):
                  stochastic: Tuple,
                  top_layer: bool,
                  bottom_layer: bool,
+                 q_dropout: float = 0,
+                 p_dropout: float = 0,
                  Block: Any = GatedResNet,
                  **kwargs):
         """
@@ -158,6 +160,8 @@ class VaeStage(Stage):
         :param stochastic: integer or tuple describing the stochastic layer: units or (units, kernel_size, discrete, K)
         :param top_layer: is top layer
         :param bottom_layer: is bottom layer
+        :param q_dropout: inference dropout value
+        :param p_dropout: generative dropout value
         :param Block: Block constructor
         :param kwargs: others arguments passed to the block constructors (both convolutions and stochastic)
         """
@@ -169,7 +173,7 @@ class VaeStage(Stage):
         # define inference convolutional blocks
         in_residual = not bottom_layer
         self.q_convs = DeterministicBlocks(tensor_shp, convolutions, aux_shape=aux_shape, transposed=False,
-                                           in_residual=in_residual, Block=Block, **kwargs)
+                                           in_residual=in_residual, Block=Block, dropout=q_dropout, **kwargs)
         tensor_shp = self.q_convs.output_shape
 
         # define the stochastic layer
@@ -180,7 +184,7 @@ class VaeStage(Stage):
         # skip connections: assumes that all hidden features from the above generative block are of the same shape `tensor_shp`
         skip_shapes = None if top_layer else [tensor_shp] * len(convolutions)
         self.p_convs = DeterministicBlocks(z_shape, convolutions[::-1], aux_shape=skip_shapes, transposed=True,
-                                           in_residual=False, Block=Block, **kwargs)
+                                           in_residual=False, Block=Block, dropout=p_dropout, **kwargs)
 
         self._output_shape = {'x': z_shape, 'aux': [tensor_shp]}
         self._forward_shape = {'d': self.p_convs.output_shape, 'aux': self.p_convs.hidden_shapes}
@@ -248,8 +252,9 @@ class LvaeStage(VaeStage):
                  stochastic: Tuple,
                  top_layer: bool,
                  bottom_layer: bool,
+                 q_dropout: float = 0,
+                 p_dropout: float = 0,
                  Block: Any = GatedResNet,
-                 dropout: float = 0,
                  **kwargs):
         """
         LVAE: https://arxiv.org/abs/1602.02282
@@ -264,9 +269,11 @@ class LvaeStage(VaeStage):
         :param stochastic: integer or tuple describing the stochastic layer: units or (units, kernel_size, discrete, K)
         :param top_layer: is top layer
         :param bottom_layer: is bottom layer
+        :param q_dropout: inference dropout value
+        :param p_dropout: generative dropout value
         :param kwargs: others arguments passed to the block constructors (both convolutions and stochastic)
         """
-        super().__init__(input_shape, convolutions, stochastic, top_layer, bottom_layer, dropout=dropout, Block=Block,
+        super().__init__(input_shape, convolutions, stochastic, top_layer, bottom_layer, p_dropout=p_dropout, q_dropout=q_dropout,Block=Block,
                          **kwargs)
 
         # get the tensor shape of the output of the deterministic path
@@ -278,7 +285,7 @@ class LvaeStage(VaeStage):
         conv = convolutions[-1]
         if isinstance(conv, list):
             conv = [conv[0], conv[1], 1, conv[-1]]
-        self.merge = Block(top_shape, conv, aux_shape=aux_shape, transposed=False, in_residual=True, dropout=dropout,
+        self.merge = Block(top_shape, conv, aux_shape=aux_shape, transposed=False, in_residual=True, dropout=p_dropout,
                            **kwargs)
 
     def infer(self, data: Dict[str, Tensor], **kwargs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
@@ -339,7 +346,8 @@ class BivaIntermediateStage(Stage):
                  stochastic: Union[Dict, Tuple[Dict]],
                  bottom_layer: bool,
                  top_layer: bool,
-                 dropout: float = 0,
+                 q_dropout: float = 0,
+                 p_dropout: float = 0,
                  conditional_bu: bool = False,
                  Block: Any = GatedResNet,
                  **kwargs):
@@ -357,7 +365,8 @@ class BivaIntermediateStage(Stage):
         :param stochastic: dictionary describing the stochastic layer: units or (units, kernel_size, discrete, K)
         :param bottom_layer: is bottom layer
         :param top_layer: is top layer
-        :param dropout: dropout value
+        :param q_dropout: inference dropout value
+        :param p_dropout: generative dropout value
         :param conditional_bu: condition BU prior on p(z_TD)
         :param aux_shape: auxiliary input tensor shape as a tuple of integers (B, H, *D)
         :param kwargs: others arguments passed to the block constructors (both convolutions and stochastic)
@@ -384,10 +393,10 @@ class BivaIntermediateStage(Stage):
         # define inference convolutional blocks
         in_residual = not bottom_layer
         self.q_bu_convs = DeterministicBlocks(bu_shp, convolutions, aux_shape=aux_shape, transposed=False,
-                                              in_residual=in_residual, dropout=dropout, Block=Block, **kwargs)
+                                              in_residual=in_residual, dropout=q_dropout, Block=Block, **kwargs)
         aux_shape = [self.q_bu_convs.output_shape]
         self.q_td_convs = DeterministicBlocks(td_shp, convolutions, aux_shape=aux_shape, transposed=False,
-                                              in_residual=in_residual, dropout=dropout, Block=Block, **kwargs)
+                                              in_residual=in_residual, dropout=q_dropout, Block=Block, **kwargs)
 
         # shape of the output of the inference path and input tensor from the generative path
         top_tensor_shp = self.q_td_convs.output_shape
@@ -407,13 +416,13 @@ class BivaIntermediateStage(Stage):
         conv = convolutions[-1]
         if isinstance(conv, list):
             conv = [conv[0], conv[1], 1, conv[-1]]
-        self.merge = Block(top_tensor_shp, conv, aux_shape=aux_shape, transposed=False, in_residual=True, dropout=dropout,
+        self.merge = Block(top_tensor_shp, conv, aux_shape=aux_shape, transposed=False, in_residual=True, dropout=p_dropout,
                            **kwargs)
 
         # define the condition p(z_bu | z_td, ...)
         if conditional_bu:
             self.bu_condition = Block(z_shape, conv, aux_shape=aux_shape, transposed=False, in_residual=False,
-                                      dropout=0, **kwargs)
+                                      dropout=p_dropout, **kwargs)
         else:
             self.bu_condition = None
 
@@ -422,7 +431,7 @@ class BivaIntermediateStage(Stage):
         skip_shapes = None if top_layer else [top_tensor_shp] * len(convolutions)
         p_in_shp = shp_cat([z_shape, z_shape], 1)
         self.p_convs = DeterministicBlocks(p_in_shp, convolutions[::-1], aux_shape=skip_shapes, transposed=True,
-                                           in_residual=False, dropout=dropout, Block=Block, **kwargs)
+                                           in_residual=False, dropout=p_dropout, Block=Block, **kwargs)
 
         aux_shape = shp_cat([top_tensor_shp, top_tensor_shp], 1)
         self._output_shape = {'x_bu': z_shape,
@@ -578,7 +587,8 @@ class BivaTopStage(Stage):
                  stochastic: Union[Dict, Tuple[Dict]],
                  bottom_layer: bool,
                  top_layer: bool,
-                 dropout: float = 0,
+                 q_dropout: float = 0,
+                 p_dropout: float = 0,
                  Block: Any = GatedResNet,
                  **kwargs):
         """
@@ -596,7 +606,8 @@ class BivaTopStage(Stage):
         :param stochastic: dictionary describing the stochastic layer: units or (units, kernel_size, discrete, K)
         :param bottom_layer: is bottom layer
         :param top_layer: is top layer
-        :param dropout: dropout value
+        :param q_dropout: inference dropout value
+        :param p_dropout: generative dropout value
         :param aux_shape: auxiliary input tensor shape as a tuple of integers (B, H, *D)
         :param kwargs: others arguments passed to the block constructors (both convolutions and stochastic)
         """
@@ -610,14 +621,14 @@ class BivaTopStage(Stage):
         # define inference BU and TD paths
         in_residual = not bottom_layer
         self.q_bu_convs = DeterministicBlocks(bu_shp, convolutions, aux_shape=aux_shape, transposed=False,
-                                              in_residual=in_residual, dropout=dropout, Block=Block, **kwargs)
+                                              in_residual=in_residual, dropout=q_dropout, Block=Block, **kwargs)
         aux_shape = [self.q_bu_convs.output_shape]
         self.q_td_convs = DeterministicBlocks(td_shp, convolutions, aux_shape=aux_shape, transposed=False,
-                                              in_residual=in_residual, dropout=dropout, Block=Block, **kwargs)
+                                              in_residual=in_residual, dropout=q_dropout, Block=Block, **kwargs)
 
         # merge BU and TD paths
         self.q_top = Block(shp_cat([self.q_bu_convs.output_shape, self.q_td_convs.output_shape], 1),
-                           [convolutions[-1][0], convolutions[-1][1], 1, convolutions[-1][-1]], dropout=dropout,
+                           [convolutions[-1][0], convolutions[-1][1], 1, convolutions[-1][-1]], dropout=q_dropout,
                            residual=True, **kwargs)
         top_tensor_shp = self.q_top.output_shape
 
@@ -627,7 +638,7 @@ class BivaTopStage(Stage):
         # generative deterministic block
         z_shape = self.stochastic.output_shape
         self.p_convs = DeterministicBlocks(z_shape, convolutions[::-1], aux_shape=None, transposed=True,
-                                           in_residual=False, dropout=dropout, Block=Block, **kwargs)
+                                           in_residual=False, dropout=p_dropout, Block=Block, **kwargs)
 
         self._output_shape = {}  # no output shape (top layer)
         self._forward_shape = self.p_convs.output_shape
@@ -722,7 +733,8 @@ def BivaStage(input_shape: Dict[str, Tuple[int]],
     :param stochastic: dictionary describing the stochastic layer: units or (units, kernel_size, discrete, K)
     :param top_layer: is top layer
     :param bottom_layer: is bottom layer
-    :param dropout: dropout value
+    :param q_dropout: inference dropout value
+    :param p_dropout: generative dropout value
     :param conditional_bu: condition BU prior on p(z_TD)
     :param aux_shape: auxiliary input tensor shape as a tuple of integers (B, H, *D)
     :param kwargs: others arguments passed to the block constructors (both convolutions and stochastic)

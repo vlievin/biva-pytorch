@@ -27,7 +27,8 @@ class DeepVae(nn.Module):
                  stages: List[List[Tuple]] = _default_enc,
                  latents: List = _default_z,
                  nonlinearity: str = 'elu',
-                 dropout: float = 0.,
+                 q_dropout: float = 0.,
+                 p_dropout: float = 0.,
                  features_out: Optional[int] = None,
                  lambda_init: Optional[Callable] = None,
                  **kwargs):
@@ -40,7 +41,8 @@ class DeepVae(nn.Module):
         :param stages: a list of list of tuple, each tuple describing a convolutional block (filters, stride, kernel_size)
         :param latents: a list describing the stochastic layers for each stage
         :param nonlinearity: activation function (gelu, elu, relu, tanh)
-        :param dropout: dropout value
+        :param q_dropout: inference dropout value
+        :param p_dropout: generative dropout value
         :param features_out: optional number of output features if different from the input
         :param lambda_init: lambda function applied to the input
         :param kwargs: additional arugments passed to each stage
@@ -58,7 +60,7 @@ class DeepVae(nn.Module):
 
         # build stages
         stages_ = []
-        block_args = {'act': Act, 'dropout': dropout}
+        block_args = {'act': Act, 'q_dropout': q_dropout, 'p_dropout': p_dropout}
 
         input_shape = {'x': tensor_shp}
         for i, (conv_data, z_data) in enumerate(zip(stages, latents)):

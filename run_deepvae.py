@@ -10,10 +10,10 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from biva.data import get_binmnist_datasets
+from biva.data import get_binmnist_datasets, get_cifar10_datasets
 from biva.evaluation import VariationalInference
 from biva.model import DeepVae, get_deep_vae_mnist
-from biva.utils import LowerBoundedExponentialLR, training_step, test_step, summary2logger, save_model, load_model, sample_model
+from biva.utils import LowerBoundedExponentialLR, training_step, test_step, summary2logger, save_model, load_model, sample_model, DiscretizedMixtureLogits
 
 from booster.data import Aggregator
 from booster.utils import EMA
@@ -30,7 +30,9 @@ parser.add_argument('--epochs', default=300, type=int, help='number of epochs')
 parser.add_argument('--lr', default=2e-3, type=float, help='base learning rate')
 parser.add_argument('--seed', default=42, type=int, help='random seed')
 parser.add_argument('--freebits', default=2.0, type=float, help='freebits per latent variable')
+parser.add_argument('--nr_mix', default=10, type=int, help='number of mixtures')
 parser.add_argument('--ema', default=0.9995, type=float, help='ema')
+parser.add_argument('--dropout', default=0.5, type=float, help='dropout')
 parser.add_argument('--iw_samples', default=1000, type=int, help='number of importance weighted samples for testing')
 parser.add_argument('--id', default='', type=str, help='run id suffix')
 
@@ -55,6 +57,10 @@ valid_writer = SummaryWriter(os.path.join(logdir, 'valid'))
 # load data
 if opt.dataset == 'binmnist':
     train_dataset, valid_dataset, test_dataset = get_binmnist_datasets(opt.data_root)
+elif opt.dataset == 'cifar10':
+    from torchvision.transforms import Lambda
+    transform = Lambda(lambda x : x * 2 - 1)
+    train_dataset, valid_dataset, test_dataset = get_cifar10_datasets(opt.data_root, transform=transform)
 else:
     raise NotImplementedError
 
@@ -63,15 +69,29 @@ valid_loader = DataLoader(valid_dataset, batch_size=2 * opt.bs, shuffle=True, pi
 test_loader = DataLoader(test_dataset, batch_size=2 * opt.bs, shuffle=True, pin_memory=False, num_workers=opt.num_workers)
 tensor_shp = (-1, *train_dataset[0].shape)
 
+print(tensor_shp, train_dataset[0].min(), train_dataset[0].max())
+
+# define likelihood
+if 'cifar' in opt.dataset:
+    likelihood = DiscretizedMixtureLogits(opt.nr_mix)
+else:
+    likelihood = Bernoulli
+
 # define model
-likelihood = Bernoulli
-stages, latents = get_deep_vae_mnist()
+if 'cifar' in opt.dataset:
+    stages, latents = get_deep_vae_mnist()
+    features_out = 10 * opt.nr_mix
+else:
+    stages, latents = get_deep_vae_mnist()
+    features_out = tensor_shp[1]
+
 model = DeepVae(tensor_shp=tensor_shp,
                 stages=stages,
                 latents=latents,
                 nonlinearity='elu',
-                dropout=0.5,
-                type=opt.model_type)
+                dropout=opt.dropout,
+                type=opt.model_type,
+                features_out=features_out)
 model.to(opt.device)
 
 # define freebits

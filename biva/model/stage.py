@@ -273,7 +273,8 @@ class LvaeStage(VaeStage):
         :param p_dropout: generative dropout value
         :param kwargs: others arguments passed to the block constructors (both convolutions and stochastic)
         """
-        super().__init__(input_shape, convolutions, stochastic, top_layer, bottom_layer, p_dropout=p_dropout, q_dropout=q_dropout,Block=Block,
+        super().__init__(input_shape, convolutions, stochastic, top_layer, bottom_layer, p_dropout=p_dropout,
+                         q_dropout=q_dropout, Block=Block,
                          **kwargs)
 
         # get the tensor shape of the output of the deterministic path
@@ -416,7 +417,8 @@ class BivaIntermediateStage(Stage):
         conv = convolutions[-1]
         if isinstance(conv, list):
             conv = [conv[0], conv[1], 1, conv[-1]]
-        self.merge = Block(top_tensor_shp, conv, aux_shape=aux_shape, transposed=False, in_residual=True, dropout=p_dropout,
+        self.merge = Block(top_tensor_shp, conv, aux_shape=aux_shape, transposed=False, in_residual=True,
+                           dropout=p_dropout,
                            **kwargs)
 
         # define the condition p(z_bu | z_td, ...)
@@ -571,7 +573,7 @@ class BivaTopStage_simpler(VaeStage):
         tensor_shp = shp_cat([bu_shp, td_shp], 1)
         concat_shape = {'x': tensor_shp}
 
-        super().__init__(concat_shape, *args, **kwargs, top_layer=True)
+        super().__init__(concat_shape, *args, **kwargs)
 
     def infer(self, data: Dict[str, Tensor], **kwargs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         x_bu = data.pop('x_bu')

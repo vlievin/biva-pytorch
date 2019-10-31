@@ -100,10 +100,10 @@ model = DeepVae(tensor_shp=tensor_shp,
 model.to(opt.device)
 
 # define freebits
-n_latens = len(latents)
+n_latents = len(latents)
 if opt.model_type == 'biva':
-    n_latens = 2 * n_latens - 1
-freebits = [opt.freebits] * n_latens
+    n_latents = 2 * n_latents - 1
+freebits = [opt.freebits] * n_latents
 
 # data dependent init for weight normalization (automatically done during the first forward pass)
 with torch.no_grad():

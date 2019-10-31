@@ -5,7 +5,6 @@ import torch
 from torch import Tensor
 from torch import nn
 from torch.distributions import Normal
-import torch.nn.functional as F
 
 from ..layers import PaddedNormedConv, NormedDense, NormedLinear
 from ..utils import batch_reduce
@@ -63,7 +62,6 @@ class DenseNormal(StochasticLayer):
         self._output_shape = tensor_shp
         self._input_shape = tensor_shp
 
-        self.eps = 1e-8
         nhid = tensor_shp[1]
         self.nz = data.get('N')
         self.tensor_shp = tensor_shp
@@ -109,7 +107,7 @@ class DenseNormal(StochasticLayer):
 
         # apply activation to logvar
         mu, logvar = logits.chunk(2, dim=1)
-        logvar = F.softplus(logvar) + self.eps
+        logvar = self.act(logvar)
         return mu, logvar
 
     def forward(self, x: Optional[Tensor], inference: bool, N: Optional[int] = None, **kwargs) -> Tuple[
@@ -151,7 +149,6 @@ class ConvNormal(StochasticLayer):
                  learn_prior: bool = True, **kwargs):
         super().__init__(data, tensor_shp)
 
-        self.eps = 1e-8
         nhid = tensor_shp[1]
         self.nz = data.get('N')
         kernel_size = data.get('kernel')
@@ -202,8 +199,7 @@ class ConvNormal(StochasticLayer):
 
         # apply activation to logvar
         mu, logvar = logits.chunk(2, dim=1)
-        logvar = F.softplus(logvar) + self.eps
-        return mu, logvar
+        return mu, self.act(logvar)
 
     def expand_prior(self, batch_size: int):
         return self.prior.expand(batch_size, *self.prior.shape).chunk(2, dim=1)

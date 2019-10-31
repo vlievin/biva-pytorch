@@ -5,8 +5,6 @@ import os
 
 import numpy as np
 import torch
-from booster.data import Aggregator
-from booster.utils import EMA
 from torch.distributions import Bernoulli
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -15,8 +13,10 @@ from tqdm import tqdm
 from biva.data import get_binmnist_datasets, get_cifar10_datasets
 from biva.evaluation import VariationalInference
 from biva.model import DeepVae, get_deep_vae_mnist
-from biva.utils import LowerBoundedExponentialLR, training_step, test_step, summary2logger, save_model, load_model, \
-    sample_model, DiscretizedMixtureLogits
+from biva.utils import LowerBoundedExponentialLR, training_step, test_step, summary2logger, save_model, load_model, sample_model, DiscretizedMixtureLogits
+
+from booster.data import Aggregator
+from booster.utils import EMA
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--root', default='runs/', help='directory to store training logs')
@@ -32,8 +32,7 @@ parser.add_argument('--seed', default=42, type=int, help='random seed')
 parser.add_argument('--freebits', default=2.0, type=float, help='freebits per latent variable')
 parser.add_argument('--nr_mix', default=10, type=int, help='number of mixtures')
 parser.add_argument('--ema', default=0.9995, type=float, help='ema')
-parser.add_argument('--q_dropout', default=0.5, type=float, help='inference model dropout')
-parser.add_argument('--p_dropout', default=0.5, type=float, help='generative model dropout')
+parser.add_argument('--dropout', default=0.5, type=float, help='dropout')
 parser.add_argument('--iw_samples', default=1000, type=int, help='number of importance weighted samples for testing')
 parser.add_argument('--id', default='', type=str, help='run id suffix')
 
@@ -60,17 +59,14 @@ if opt.dataset == 'binmnist':
     train_dataset, valid_dataset, test_dataset = get_binmnist_datasets(opt.data_root)
 elif opt.dataset == 'cifar10':
     from torchvision.transforms import Lambda
-
-    transform = Lambda(lambda x: x * 2 - 1)
+    transform = Lambda(lambda x : x * 2 - 1)
     train_dataset, valid_dataset, test_dataset = get_cifar10_datasets(opt.data_root, transform=transform)
 else:
     raise NotImplementedError
 
 train_loader = DataLoader(train_dataset, batch_size=opt.bs, shuffle=True, pin_memory=False, num_workers=opt.num_workers)
-valid_loader = DataLoader(valid_dataset, batch_size=2 * opt.bs, shuffle=True, pin_memory=False,
-                          num_workers=opt.num_workers)
-test_loader = DataLoader(test_dataset, batch_size=2 * opt.bs, shuffle=True, pin_memory=False,
-                         num_workers=opt.num_workers)
+valid_loader = DataLoader(valid_dataset, batch_size=2 * opt.bs, shuffle=True, pin_memory=False, num_workers=opt.num_workers)
+test_loader = DataLoader(test_dataset, batch_size=2 * opt.bs, shuffle=True, pin_memory=False, num_workers=opt.num_workers)
 tensor_shp = (-1, *train_dataset[0].shape)
 
 print(tensor_shp, train_dataset[0].min(), train_dataset[0].max())
@@ -93,8 +89,7 @@ model = DeepVae(tensor_shp=tensor_shp,
                 stages=stages,
                 latents=latents,
                 nonlinearity='elu',
-                q_dropout=opt.q_dropout,
-                p_dropout=opt.p_dropout,
+                dropout=opt.dropout,
                 type=opt.model_type,
                 features_out=features_out)
 model.to(opt.device)

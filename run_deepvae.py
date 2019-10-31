@@ -100,7 +100,7 @@ logging.basicConfig(level=logging.INFO,
 train_logger = logging.getLogger('train')
 eval_logger = logging.getLogger('eval')
 M_parameters = (sum(p.numel() for p in model.parameters()) / 1e6)
-logging.getLogger(run_id).info(f'# Total Number of Parameters: {M_parameters:.3f}M')
+logging.getLogger('main').info(f'# Total Number of Parameters: {M_parameters:.3f}M')
 
 # run
 for epoch in range(1, opt.epochs + 1):

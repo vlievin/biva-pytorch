@@ -157,13 +157,12 @@ class ConvNormal(StochasticLayer):
         self.act = act()
 
         # prior
-        if top_layer:
-            prior = torch.zeros((2 * self.nz, *tensor_shp[2:]))
+        prior = torch.zeros((2 * self.nz, *tensor_shp[2:]))
 
-            if learn_prior:
-                self.prior = nn.Parameter(prior)
-            else:
-                self.register_buffer('prior', prior)
+        if learn_prior:
+            self.prior = nn.Parameter(prior)
+        else:
+            self.register_buffer('prior', prior)
 
         # computes logits
         nz_in = 2 * self.nz

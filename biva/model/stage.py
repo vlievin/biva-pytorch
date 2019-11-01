@@ -177,7 +177,7 @@ class VaeStage(Stage):
         tensor_shp = self.q_convs.output_shape
 
         # define the stochastic layer
-        self.stochastic = StochasticBlock(stochastic, tensor_shp, top, **kwargs)
+        self.stochastic = StochasticBlock(stochastic, tensor_shp, top=top, **kwargs)
         z_shape = self.stochastic.output_shape
 
         # define the generative convolutional blocks with the skip connections
@@ -404,10 +404,10 @@ class BivaIntermediateStage(Stage):
 
         # define the BU stochastic layer
         bu_top = False if conditional_bu else top
-        self.bu_stochastic = StochasticBlock(bu_stochastic, top_tensor_shp, bu_top, **kwargs)
+        self.bu_stochastic = StochasticBlock(bu_stochastic, top_tensor_shp, top=bu_top, **kwargs)
 
         # define the TD stochastic layer
-        self.td_stochastic = StochasticBlock(td_stochastic, top_tensor_shp, top, **kwargs)
+        self.td_stochastic = StochasticBlock(td_stochastic, top_tensor_shp, top=top, **kwargs)
 
         # output shape
         z_shape = self.bu_stochastic.output_shape
@@ -635,7 +635,7 @@ class BivaTopStage(Stage):
         top_tensor_shp = self.q_top.output_shape
 
         # stochastic layer
-        self.stochastic = StochasticBlock(stochastic, top_tensor_shp, top, **kwargs)
+        self.stochastic = StochasticBlock(stochastic, top_tensor_shp, top=top, **kwargs)
 
         # generative deterministic block
         z_shape = self.stochastic.output_shape
@@ -716,7 +716,7 @@ class BivaTopStage(Stage):
 def BivaStage(input_shape: Dict[str, Tuple[int]],
               convolutions: List[Tuple[int]],
               stochastic: Union[Dict, Tuple[Dict]],
-              top:bool=False,
+              top: bool = False,
               **kwargs):
     """
     BIVA: https://arxiv.org/abs/1902.02102
@@ -742,6 +742,6 @@ def BivaStage(input_shape: Dict[str, Tuple[int]],
     """
 
     if top:
-        return BivaTopStage(input_shape, convolutions, stochastic, **kwargs)
+        return BivaTopStage(input_shape, convolutions, stochastic, top=top, **kwargs)
     else:
-        return BivaIntermediateStage(input_shape, convolutions, stochastic, **kwargs)
+        return BivaIntermediateStage(input_shape, convolutions, stochastic, top=top, **kwargs)

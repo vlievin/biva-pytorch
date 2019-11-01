@@ -148,7 +148,7 @@ class ConvNormal(StochasticLayer):
     """
 
     def __init__(self, data: Dict, tensor_shp: Tuple[int], top_layer: bool, act: nn.Module = nn.ELU,
-                 learn_prior: bool = True, **kwargs):
+                 learn_prior: bool = False, **kwargs):
         super().__init__(data, tensor_shp)
 
         self.eps = 1e-8

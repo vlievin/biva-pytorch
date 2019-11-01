@@ -73,8 +73,6 @@ test_loader = DataLoader(test_dataset, batch_size=2 * opt.bs, shuffle=True, pin_
                          num_workers=opt.num_workers)
 tensor_shp = (-1, *train_dataset[0].shape)
 
-print(tensor_shp, train_dataset[0].min(), train_dataset[0].max())
-
 # define likelihood
 if 'cifar' in opt.dataset:
     likelihood = DiscretizedMixtureLogits(opt.nr_mix)

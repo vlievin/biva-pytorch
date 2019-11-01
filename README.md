@@ -14,7 +14,6 @@ conda create --name biva python=3.7
 conda activate biva
 pip install -r requirements.txt
 python run_deepvae.py --device cuda --dataset binmnist --q_dropout 0.5 --p_dropout 0.5
-python run_deepvae.py --device cuda --dataset cifar10 --q_dropout 0.2 --p_dropout 0
 ```
 
 ## Citation

@@ -87,7 +87,7 @@ class DeterministicBlocks(nn.Module):
         return x, hidden
 
 
-class Stage(nn.Module):
+class BaseStage(nn.Module):
     def __init__(self, input_shape: Dict[str, Tuple[int]], *args, **kwargs):
         """
         Define a stage of a hierarchical model.
@@ -136,7 +136,7 @@ class Stage(nn.Module):
         raise NotImplementedError
 
 
-class VaeStage(Stage):
+class VaeStage(BaseStage):
     def __init__(self,
                  input_shape: Dict[str, Tuple[int]],
                  convolutions: List[Tuple[int]],
@@ -340,7 +340,7 @@ class LvaeStage(VaeStage):
         return output_data, loss_data
 
 
-class BivaIntermediateStage(Stage):
+class BivaIntermediateStage(BaseStage):
     def __init__(self,
                  input_shape: Dict[str, Tuple[int]],
                  convolutions: List[Tuple[int]],
@@ -583,7 +583,7 @@ class BivaTopStage_simpler(VaeStage):
         return super().infer(data, **kwargs)
 
 
-class BivaTopStage(Stage):
+class BivaTopStage(BaseStage):
     def __init__(self, input_shape: Dict[str, Tuple[int]],
                  convolutions: List[Tuple[int]],
                  stochastic: Union[Dict, Tuple[Dict]],

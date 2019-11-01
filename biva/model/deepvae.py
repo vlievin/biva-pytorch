@@ -22,7 +22,7 @@ class DeepVae(nn.Module):
     """
 
     def __init__(self,
-                 type: str = 'biva',
+                 Stage: Any = BivaStage,
                  tensor_shp: Tuple[int] = (-1, 1, 28, 28),
                  stages: List[List[Tuple]] = _default_enc,
                  latents: List = _default_z,
@@ -35,8 +35,7 @@ class DeepVae(nn.Module):
 
         """
         Initialize the Deep VAE model.
-
-        :param type: model type (vae, lvae, biva)
+        :param Stage: stage constructor (VaeStage, LvaeStage, BivaStage)
         :param tensor_shp: Input tensor shape (batch_size, channels, *dimensions)
         :param stages: a list of list of tuple, each tuple describing a convolutional block (filters, stride, kernel_size)
         :param latents: a list describing the stochastic layers for each stage
@@ -45,6 +44,7 @@ class DeepVae(nn.Module):
         :param p_dropout: generative dropout value
         :param features_out: optional number of output features if different from the input
         :param lambda_init: lambda function applied to the input
+
         :param kwargs: additional arugments passed to each stage
         """
         super().__init__()
@@ -54,9 +54,6 @@ class DeepVae(nn.Module):
 
         # select activation class
         Act = {'elu': nn.ELU, 'relu': nn.ReLU, 'tanh': nn.Tanh()}[nonlinearity]
-
-        # seect stage class
-        Stage = {'vae': VaeStage, 'lvae': LvaeStage, 'biva': BivaStage}[type]
 
         # build stages
         stages_ = []
@@ -158,16 +155,16 @@ class DeepVae(nn.Module):
 class BIVA(DeepVae):
     def __init__(self, **kwargs):
         kwargs.pop('type', None)
-        super().__init__(type='biva', **kwargs)
+        super().__init__(Stage=VaeStage, **kwargs)
 
 
 class LVAE(DeepVae):
     def __init__(self, **kwargs):
         kwargs.pop('type', None)
-        super().__init__(type='lvae', **kwargs)
+        super().__init__(Stage=LvaeStage, **kwargs)
 
 
 class VAE(DeepVae):
     def __init__(self, **kwargs):
         kwargs.pop('type', None)
-        super().__init__(type='vae', **kwargs)
+        super().__init__(type=BivaStage, **kwargs)

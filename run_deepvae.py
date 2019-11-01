@@ -14,9 +14,9 @@ from tqdm import tqdm
 
 from biva.data import get_binmnist_datasets, get_cifar10_datasets
 from biva.evaluation import VariationalInference
-from biva.model import DeepVae, get_deep_vae_mnist
 from biva.utils import LowerBoundedExponentialLR, training_step, test_step, summary2logger, save_model, load_model, \
     sample_model, DiscretizedMixtureLogits
+from biva.model import DeepVae, get_deep_vae_mnist, VaeStage, LvaeStage, BivaStage
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--root', default='runs/', help='directory to store training logs')
@@ -87,7 +87,9 @@ else:
     stages, latents = get_deep_vae_mnist()
     features_out = tensor_shp[1]
 
-model = DeepVae(tensor_shp=tensor_shp,
+Stage = {'vae': VaeStage, 'lvae': LvaeStage, 'biva': BivaStage}[opt.model_type]
+model = DeepVae(Stage=Stage,
+                tensor_shp=tensor_shp,
                 stages=stages,
                 latents=latents,
                 nonlinearity='elu',

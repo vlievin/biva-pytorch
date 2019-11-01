@@ -22,7 +22,7 @@ parser.add_argument('--dataset', default='binmnist', help='binmnist')
 parser.add_argument('--model_type', default='biva', help='model type (vae | lvae | biva)')
 parser.add_argument('--device', default='cuda', help='cuda or cpu')
 parser.add_argument('--num_workers', default=1, type=int, help='number of workers')
-parser.add_argument('--bs', default=48, type=int, help='batch size')
+parser.add_argument('--bs', default=128, type=int, help='batch size')
 parser.add_argument('--epochs', default=300, type=int, help='number of epochs')
 parser.add_argument('--lr', default=2e-3, type=float, help='base learning rate')
 parser.add_argument('--seed', default=42, type=int, help='random seed')
@@ -100,7 +100,7 @@ logging.basicConfig(level=logging.INFO,
 train_logger = logging.getLogger('train')
 eval_logger = logging.getLogger('eval')
 M_parameters = (sum(p.numel() for p in model.parameters()) / 1e6)
-logging.getLogger(run_id).info(f'# Total Number of Parameters: {M_parameters:.3f}M')
+logging.getLogger('main').info(f'# Total Number of Parameters: {M_parameters:.3f}M')
 
 # run
 for epoch in range(1, opt.epochs + 1):

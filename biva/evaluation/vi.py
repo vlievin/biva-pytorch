@@ -57,7 +57,7 @@ class VariationalInference(object):
 
         return kls, kls_loss
 
-    def compute_elbo(self, x, outputs, beta=1.0, freebits=0, **kwargs):
+    def compute_elbo(self, x, outputs, beta=1.0, freebits=None, **kwargs):
 
         # Destructuring dict
         x_ = outputs.get('x_')

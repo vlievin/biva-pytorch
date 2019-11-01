@@ -146,6 +146,7 @@ class VaeStage(BaseStage):
                  q_dropout: float = 0,
                  p_dropout: float = 0,
                  Block: Any = GatedResNet,
+                 no_skip: bool = False,
                  **kwargs):
         """
         VAE: https://arxiv.org/abs/1312.6114
@@ -163,12 +164,15 @@ class VaeStage(BaseStage):
         :param q_dropout: inference dropout value
         :param p_dropout: generative dropout value
         :param Block: Block constructor
+        :param no_skip: do not use skip connections
         :param kwargs: others arguments passed to the block constructors (both convolutions and stochastic)
         """
         super().__init__(input_shape)
 
         tensor_shp = input_shape.get('x')
         aux_shape = input_shape.get('aux', None)
+        if no_skip:
+            aux_shape = None
 
         # define inference convolutional blocks
         in_residual = not bottom
@@ -182,12 +186,13 @@ class VaeStage(BaseStage):
 
         # define the generative convolutional blocks with the skip connections
         # skip connections: assumes that all hidden features from the above generative block are of the same shape `tensor_shp`
-        skip_shapes = None if top else [tensor_shp] * len(convolutions)
+        skip_shapes = None if (top or no_skip) else [tensor_shp] * len(convolutions)
         self.p_convs = DeterministicBlocks(z_shape, convolutions[::-1], aux_shape=skip_shapes, transposed=True,
                                            in_residual=False, Block=Block, dropout=p_dropout, **kwargs)
 
         self._output_shape = {'x': z_shape, 'aux': [tensor_shp]}
         self._forward_shape = {'d': self.p_convs.output_shape, 'aux': self.p_convs.hidden_shapes}
+        self._no_skip = no_skip
 
     @property
     def output_shape(self) -> Dict[str, Tuple[int]]:
@@ -209,6 +214,9 @@ class VaeStage(BaseStage):
         """
         x = data.get('x')
         aux = data.get('aux', None)
+        if self._no_skip:
+            aux = None
+
         x, _ = self.q_convs(x, aux)
 
         z, q_data = self.stochastic(x, inference=True, **kwargs)
@@ -226,6 +234,8 @@ class VaeStage(BaseStage):
         """
         d = data.get('d', None)
         aux = data.get('aux', None)
+        if self._no_skip:
+            aux = None
 
         # sample p(z | d)
         z_p, p_data = self.stochastic(d, inference=False, **kwargs)
@@ -274,19 +284,18 @@ class LvaeStage(VaeStage):
         :param kwargs: others arguments passed to the block constructors (both convolutions and stochastic)
         """
         super().__init__(input_shape, convolutions, stochastic, top=top, bottom=bottom, p_dropout=p_dropout,
-                         q_dropout=q_dropout, Block=Block,
-                         **kwargs)
+                         q_dropout=q_dropout, Block=Block, **kwargs)
 
         # get the tensor shape of the output of the deterministic path
         top_shape = self._output_shape.get('aux')[-1]
         # modify the output of the inference path to be only deterministic
         self._output_shape = {'x': top_shape, 'aux': [top_shape]}
 
-        aux_shape = top_shape if not top else None
+        topdown = top_shape if not top else None
         conv = convolutions[-1]
         if isinstance(conv, list):
             conv = [conv[0], conv[1], 1, conv[-1]]
-        self.merge = Block(top_shape, conv, aux_shape=aux_shape, transposed=False, in_residual=True, dropout=p_dropout,
+        self.merge = Block(top_shape, conv, aux_shape=topdown, transposed=False, in_residual=True, dropout=p_dropout,
                            **kwargs)
 
     def infer(self, data: Dict[str, Tensor], **kwargs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
@@ -299,6 +308,9 @@ class LvaeStage(VaeStage):
         """
         x = data.get('x')
         aux = data.get('aux', None)
+        if self._no_skip:
+            aux = None
+
         x, _ = self.q_convs(x, aux)
 
         return {'x': x, 'aux': [x]}, {'h': x}
@@ -313,7 +325,6 @@ class LvaeStage(VaeStage):
         :return: (dict('d' : d, 'aux : [aux]), dict('kl': [kl], **auxiliary) )
         """
         d = data.get('d', None)
-        aux = data.get('aux', None)
 
         # sample p(z | d)
         z_p, p_data = self.stochastic(d, inference=False, **kwargs)
@@ -334,6 +345,9 @@ class LvaeStage(VaeStage):
             z = z_p
 
         # pass through convolutions
+        aux = data.get('aux', None)
+        if self._no_skip:
+            aux = None
         d, skips = self.p_convs(z, aux)
 
         output_data = {'d': d, 'aux': skips}
@@ -349,6 +363,7 @@ class BivaIntermediateStage(BaseStage):
                  bottom: bool = False,
                  q_dropout: float = 0,
                  p_dropout: float = 0,
+                 no_skip: bool = False,
                  conditional_bu: bool = False,
                  Block: Any = GatedResNet,
                  **kwargs):
@@ -368,6 +383,7 @@ class BivaIntermediateStage(BaseStage):
         :param top: is top layer
         :param q_dropout: inference dropout value
         :param p_dropout: generative dropout value
+        :param no_skip: do not use skip connections
         :param conditional_bu: condition BU prior on p(z_TD)
         :param aux_shape: auxiliary input tensor shape as a tuple of integers (B, H, *D)
         :param kwargs: others arguments passed to the block constructors (both convolutions and stochastic)
@@ -390,6 +406,9 @@ class BivaIntermediateStage(BaseStage):
             td_stochastic['block'] = td_block
         else:
             bu_stochastic = td_stochastic = stochastic
+
+        if no_skip:
+            aux_shape = None
 
         # define inference convolutional blocks
         in_residual = not bottom
@@ -441,6 +460,7 @@ class BivaIntermediateStage(BaseStage):
                               'aux': [aux_shape]}
 
         self._forward_shape = {'d': self.p_convs.output_shape, 'aux': self.p_convs.hidden_shapes}
+        self._no_skip = no_skip
 
     @property
     def output_shape(self) -> Dict[str, Tuple[int]]:
@@ -468,6 +488,8 @@ class BivaIntermediateStage(BaseStage):
             x_td = data.get('x_td')
 
         aux = data.get('aux', None)
+        if self._no_skip:
+            aux = None
 
         # BU path
         x_bu, _ = self.q_bu_convs(x_bu, aux=aux)
@@ -550,6 +572,9 @@ class BivaIntermediateStage(BaseStage):
 
         # pass through convolutions
         aux = data.get('aux', None)
+        if self._no_skip:
+            aux = None
+
         d, skips = self.p_convs(z, aux=aux)
 
         # gather data
@@ -591,6 +616,7 @@ class BivaTopStage(BaseStage):
                  bottom: bool = False,
                  q_dropout: float = 0,
                  p_dropout: float = 0,
+                 no_skip: bool = False,
                  Block: Any = GatedResNet,
                  **kwargs):
         """
@@ -610,6 +636,7 @@ class BivaTopStage(BaseStage):
         :param top: is top layer
         :param q_dropout: inference dropout value
         :param p_dropout: generative dropout value
+        :param no_skip: do not use skip connections
         :param aux_shape: auxiliary input tensor shape as a tuple of integers (B, H, *D)
         :param kwargs: others arguments passed to the block constructors (both convolutions and stochastic)
         """
@@ -619,6 +646,8 @@ class BivaTopStage(BaseStage):
         bu_shp = input_shape.get('x_bu')
         td_shp = input_shape.get('x_td')
         aux_shape = input_shape.get('aux')
+        if no_skip:
+            aux_shape = None
 
         # define inference BU and TD paths
         in_residual = not bottom
@@ -644,6 +673,7 @@ class BivaTopStage(BaseStage):
 
         self._output_shape = {}  # no output shape (top layer)
         self._forward_shape = self.p_convs.output_shape
+        self._no_skip = no_skip
 
     def infer(self, data: Dict[str, Tensor], **kwargs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """
@@ -657,6 +687,8 @@ class BivaTopStage(BaseStage):
         x_bu = data.pop('x_bu')
         x_td = data.pop('x_td')
         aux = data.get('aux', None)
+        if self._no_skip:
+            aux = None
 
         # BU path
         x_bu, _ = self.q_bu_convs(x_bu, aux=aux)
@@ -697,6 +729,9 @@ class BivaTopStage(BaseStage):
 
         # pass through convolutions
         aux = data.get('aux', None)
+        if self._no_skip:
+            aux = None
+
         d, skips = self.p_convs(z, aux=aux)
 
         output_data = {'d': d, 'aux': skips}

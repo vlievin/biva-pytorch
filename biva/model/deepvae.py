@@ -31,6 +31,7 @@ class DeepVae(nn.Module):
                  p_dropout: float = 0.,
                  features_out: Optional[int] = None,
                  lambda_init: Optional[Callable] = None,
+                 projection: Optional[nn.Module] = None,
                  **kwargs):
 
         """
@@ -44,6 +45,7 @@ class DeepVae(nn.Module):
         :param p_dropout: generative dropout value
         :param features_out: optional number of output features if different from the input
         :param lambda_init: lambda function applied to the input
+        :param projection: projection layer with constructor __init__(output_shape)
 
         :param kwargs: additional arugments passed to each stage
         """
@@ -71,14 +73,18 @@ class DeepVae(nn.Module):
 
         self.stages = nn.ModuleList(stages_)
 
-        # output convolution
-        tensor_shp = self.stages[0].forward_shape['d']
-        if features_out is None:
-            features_out = self.input_tensor_shape[1]
-        conv_obj = nn.Conv2d if len(tensor_shp) == 4 else nn.Conv1d
-        conv_out = conv_obj(tensor_shp[1], features_out, 1)
-        conv_out = PaddedNormedConv(tensor_shp, conv_out, weightnorm=True)
-        self.conv_out = nn.Sequential(Act(), conv_out)
+        if projection is None:
+            # output convolution
+            tensor_shp = self.stages[0].forward_shape['d']
+            if features_out is None:
+                features_out = self.input_tensor_shape[1]
+            conv_obj = nn.Conv2d if len(tensor_shp) == 4 else nn.Conv1d
+            conv_out = conv_obj(tensor_shp[1], features_out, 1)
+            conv_out = PaddedNormedConv(tensor_shp, conv_out, weightnorm=True)
+            self.projection = nn.Sequential(Act(), conv_out)
+        else:
+            tensor_shp = self.stages[0].forward_shape['d']
+            self.projection = projection(tensor_shp)
 
     def infer(self, x: torch.Tensor, **kwargs: Any) -> List[Dict]:
         """
@@ -113,7 +119,7 @@ class DeepVae(nn.Module):
             output_data.extend(data)
 
         # output convolution
-        x = self.conv_out(x['d'])
+        x = self.projection(x['d'])
 
         # sort data: [z1, z2, ..., z_L]
         output_data = output_data.sort()
@@ -154,17 +160,17 @@ class DeepVae(nn.Module):
 
 class BIVA(DeepVae):
     def __init__(self, **kwargs):
-        kwargs.pop('type', None)
+        kwargs.pop('Stage', None)
         super().__init__(Stage=VaeStage, **kwargs)
 
 
 class LVAE(DeepVae):
     def __init__(self, **kwargs):
-        kwargs.pop('type', None)
+        kwargs.pop('Stage', None)
         super().__init__(Stage=LvaeStage, **kwargs)
 
 
 class VAE(DeepVae):
     def __init__(self, **kwargs):
-        kwargs.pop('type', None)
-        super().__init__(type=BivaStage, **kwargs)
+        kwargs.pop('Stage', None)
+        super().__init__(Stage=BivaStage, **kwargs)

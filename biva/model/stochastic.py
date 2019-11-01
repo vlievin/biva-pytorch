@@ -56,7 +56,7 @@ class DenseNormal(StochasticLayer):
     A Normal stochastic layer parametrized by dense layers.
     """
 
-    def __init__(self, data: Tuple, tensor_shp: Tuple[int], top: bool = False, act: nn.Module = nn.ELU,
+    def __init__(self, data: Dict, tensor_shp: Tuple[int], top: bool = False, act: nn.Module = nn.ELU,
                  weightnorm: bool = True, **kwargs):
         super().__init__(data, tensor_shp)
 

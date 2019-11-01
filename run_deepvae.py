@@ -54,6 +54,12 @@ valid_loader = DataLoader(valid_dataset, batch_size=2 * opt.bs, shuffle=True, pi
 test_loader = DataLoader(test_dataset, batch_size=2 * opt.bs, shuffle=True, pin_memory=False, num_workers=opt.num_workers)
 tensor_shp = (-1, *train_dataset[0].shape)
 
+# define likelihood
+if 'cifar' in opt.dataset:
+    likelihood = DiscretizedMixtureLogits(opt.nr_mix)
+else:
+    likelihood = Bernoulli
+
 # define model
 likelihood = Bernoulli
 stages, latents = get_deep_vae_mnist()

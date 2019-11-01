@@ -2,6 +2,7 @@ from typing import *
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch import Tensor
 from torch import nn
 from torch.distributions import Normal
@@ -55,7 +56,7 @@ class DenseNormal(StochasticLayer):
     A Normal stochastic layer parametrized by dense layers.
     """
 
-    def __init__(self, data: Tuple, tensor_shp: Tuple[int], top_layer: bool, act: nn.Module = nn.ELU,
+    def __init__(self, data: Tuple, tensor_shp: Tuple[int], top: bool = False, act: nn.Module = nn.ELU,
                  weightnorm: bool = True, **kwargs):
         super().__init__(data, tensor_shp)
 
@@ -69,7 +70,7 @@ class DenseNormal(StochasticLayer):
         self.dim = 2
 
         # stochastic layer and prior
-        if top_layer:
+        if top:
             prior = torch.zeros((2 * self.nz))
             self.register_buffer('prior', prior)
 
@@ -145,8 +146,8 @@ class ConvNormal(StochasticLayer):
     A Normal stochastic layer parametrized by convolutions.
     """
 
-    def __init__(self, data: Dict, tensor_shp: Tuple[int], top_layer: bool, act: nn.Module = nn.ELU,
-                 learn_prior: bool = True, **kwargs):
+    def __init__(self, data: Dict, tensor_shp: Tuple[int], top: bool = False, act: nn.Module = nn.ELU,
+                 learn_prior: bool = False, **kwargs):
         super().__init__(data, tensor_shp)
 
         nhid = tensor_shp[1]
@@ -157,7 +158,8 @@ class ConvNormal(StochasticLayer):
         self.act = act()
 
         # prior
-        prior = torch.zeros((2 * self.nz, *tensor_shp[2:]))
+        if top:
+            prior = torch.zeros((2 * self.nz, *tensor_shp[2:]))
 
         if learn_prior:
             self.prior = nn.Parameter(prior)

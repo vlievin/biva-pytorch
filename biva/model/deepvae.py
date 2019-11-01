@@ -62,10 +62,10 @@ class DeepVae(nn.Module):
 
         input_shape = {'x': tensor_shp}
         for i, (conv_data, z_data) in enumerate(zip(stages, latents)):
-            top_layer = i == len(stages) - 1
-            bottom_layer = i == 0
+            top = i == len(stages) - 1
+            bottom = i == 0
 
-            stage = Stage(input_shape, conv_data, z_data, top_layer, bottom_layer, **block_args, **kwargs)
+            stage = Stage(input_shape, conv_data, z_data, top=top, bottom=bottom, **block_args, **kwargs)
 
             input_shape = stage.output_shape
             stages_ += [stage]

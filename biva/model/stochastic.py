@@ -3,8 +3,7 @@ from typing import *
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch import Tensor
-from torch import nn
+from torch import nn, Tensor
 from torch.distributions import Normal
 
 from ..layers import PaddedNormedConv, NormedDense, NormedLinear
@@ -20,8 +19,8 @@ class StochasticLayer(nn.Module):
         super().__init__()
         pass
 
-    def forward(self, x: Optional[torch.Tensor], inference: bool, N: Optional[int] = None, **kwargs) -> Tuple[
-        torch.Tensor, Dict[str, Any]]:
+    def forward(self, x: Optional[Tensor], inference: bool, N: Optional[int] = None, **kwargs) -> Tuple[
+        Tensor, Dict[str, Any]]:
         """
         Sample the stochastic layer, if no hidden state is provided, uses the prior.
         :param x: hidden state used to computed logits (Optional : None means using the prior)
@@ -93,7 +92,7 @@ class DenseNormal(StochasticLayer):
     def input_shape(self):
         return self._input_shape
 
-    def compute_logits(self, x: torch.Tensor, inference: bool) -> Tensor:
+    def compute_logits(self, x: Tensor, inference: bool) -> Tuple[Tensor, Tensor]:
         """
         Compute the logits of the distribution.
         :param x: input tensor
@@ -148,7 +147,7 @@ class ConvNormal(StochasticLayer):
     """
 
     def __init__(self, data: Dict, tensor_shp: Tuple[int], top: bool = False, act: nn.Module = nn.ELU,
-                 learn_prior: bool = False, **kwargs):
+                 learn_prior: bool = False,  weightnorm:bool=True, **kwargs):
         super().__init__(data, tensor_shp)
 
         self.eps = 1e-8
@@ -170,8 +169,8 @@ class ConvNormal(StochasticLayer):
 
         # computes logits
         nz_in = 2 * self.nz
-        self.px2z = PaddedNormedConv(tensor_shp, nn.Conv2d(nhid, nz_in, kernel_size))
-        self.qx2z = PaddedNormedConv(tensor_shp, nn.Conv2d(nhid, nz_in, kernel_size))
+        self.px2z = PaddedNormedConv(tensor_shp, nn.Conv2d(nhid, nz_in, kernel_size), weightnorm=weightnorm)
+        self.qx2z = PaddedNormedConv(tensor_shp, nn.Conv2d(nhid, nz_in, kernel_size), weightnorm=weightnorm)
 
         # compute output shape
         nz_out = self.nz
@@ -187,7 +186,7 @@ class ConvNormal(StochasticLayer):
     def input_shape(self):
         return self._input_shape
 
-    def compute_logits(self, x: torch.Tensor, inference: bool) -> torch.Tensor:
+    def compute_logits(self, x: Tensor, inference: bool) -> Tuple[Tensor, Tensor]:
         """
         Compute the logits of the distribution.
         :param x: input tensor
@@ -208,8 +207,8 @@ class ConvNormal(StochasticLayer):
     def expand_prior(self, batch_size: int):
         return self.prior.expand(batch_size, *self.prior.shape).chunk(2, dim=1)
 
-    def forward(self, x: Optional[torch.Tensor], inference: bool, N: Optional[int] = None, **kwargs) -> Tuple[
-        torch.Tensor, Dict[str, Any]]:
+    def forward(self, x: Optional[Tensor], inference: bool, N: Optional[int] = None, **kwargs) -> Tuple[
+        Tensor, Dict[str, Any]]:
 
         if x is None:
             mu, logvar = self.expand_prior(N)

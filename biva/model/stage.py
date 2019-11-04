@@ -449,7 +449,7 @@ class BivaIntermediateStage(BaseStage):
 
         # define the generative convolutional blocks with the skip connections
         # skip connections: assumes that all hidden features from the above generative block are of the same shape `tensor_shp`
-        skip_shapes = None if top else [top_tensor_shp] * len(convolutions)
+        skip_shapes = None if (top or no_skip) else [top_tensor_shp] * len(convolutions)
         p_in_shp = shp_cat([z_shape, z_shape], 1)
         self.p_convs = DeterministicBlocks(p_in_shp, convolutions[::-1], aux_shape=skip_shapes, transposed=True,
                                            in_residual=False, dropout=p_dropout, Block=Block, **kwargs)

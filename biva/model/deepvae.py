@@ -57,7 +57,7 @@ class DeepVae(nn.Module):
         # select activation class
         Act = {'elu': nn.ELU, 'relu': nn.ReLU, 'tanh': nn.Tanh()}[nonlinearity]
 
-        # build stages
+        # initialize the inference path
         stages_ = []
         block_args = {'act': Act, 'q_dropout': q_dropout, 'p_dropout': p_dropout}
 
@@ -68,14 +68,20 @@ class DeepVae(nn.Module):
 
             stage = Stage(input_shape, conv_data, z_data, top=top, bottom=bottom, **block_args, **kwargs)
 
-            input_shape = stage.output_shape
+            input_shape = stage.q_output_shape
             stages_ += [stage]
 
         self.stages = nn.ModuleList(stages_)
 
+        # initialize the generative path
+        data = {}
+        for stage in self.stages[::-1]:
+            stage._init_generative(data)
+            data = stage.p_output_shape
+
         if projection is None:
             # output convolution
-            tensor_shp = self.stages[0].forward_shape['d']
+            tensor_shp = self.stages[0].p_output_shape['d']
             if features_out is None:
                 features_out = self.input_tensor_shape[1]
             conv_obj = nn.Conv2d if len(tensor_shp) == 4 else nn.Conv1d

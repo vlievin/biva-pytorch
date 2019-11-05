@@ -397,6 +397,7 @@ class BivaIntermediateStage(BaseStage):
                  no_skip: bool = False,
                  conditional_bu: bool = False,
                  Block: Any = GatedResNet,
+                 merge_kernel: int = 3,
                  **kwargs):
         """
         BIVA: https://arxiv.org/abs/1902.02102
@@ -421,6 +422,9 @@ class BivaIntermediateStage(BaseStage):
         """
         super().__init__(input_shape, convolutions, stochastic, top=top, bottom=bottom, q_dropout=q_dropout,
                          p_dropout=p_dropout, Block=Block, no_skip=no_skip)
+
+        self._conditional_bu = conditional_bu
+        self._merge_kernel = merge_kernel
 
         if 'x' in input_shape.keys():
             bu_shp = td_shp = input_shape.get('x')
@@ -463,27 +467,8 @@ class BivaIntermediateStage(BaseStage):
         # define the TD stochastic layer
         self.td_stochastic = StochasticBlock(td_stochastic, top_tensor_shp, top=top, **kwargs)
 
-        # output shape
-        z_shape = self.bu_stochastic.output_shape
-
-        # with its merge layer
-        aux_shape = top_tensor_shp if not top else None
-        conv = convolutions[-1]
-        if isinstance(conv, list):
-            conv = [conv[0], conv[1], 1, conv[-1]]
-        self.merge = Block(top_tensor_shp, conv, aux_shape=aux_shape, transposed=False, in_residual=True,
-                           dropout=p_dropout,
-                           **kwargs)
-
-        # define the condition p(z_bu | z_td, ...)
-        if conditional_bu:
-            self.bu_condition = Block(z_shape, conv, aux_shape=aux_shape, transposed=False, in_residual=False,
-                                      dropout=p_dropout, **kwargs)
-        else:
-            self.bu_condition = None
-
         aux_shape = shp_cat([top_tensor_shp, top_tensor_shp], 1)
-        self._q_output_shape = {'x_bu': z_shape,
+        self._q_output_shape = {'x_bu': self.bu_stochastic.output_shape,
                                 'x_td': top_tensor_shp,
                                 'aux': aux_shape}
 
@@ -491,6 +476,23 @@ class BivaIntermediateStage(BaseStage):
         """
         initialize the generative pass given the shape of the tensor from the above generative block.
         """
+
+        # TD merge layer
+        h_shape = self._q_output_shape.get('x_td', None) if not self._top else None
+        conv = self._convolutions[::-1][-1]
+        if isinstance(conv, list) or isinstance(conv, tuple):
+            conv = [conv[0], self._merge_kernel, 1, conv[-1]] # in the original implementation, this depends on the parameters of the above layers
+        self.merge = self._Block(h_shape, conv, aux_shape=h_shape, transposed=False, in_residual=True,
+                           dropout=self._p_dropout,
+                           **kwargs)
+
+        # alternative: define the condition p(z_bu | z_td, ...)
+        if self._conditional_bu:
+            self.bu_condition = self._Block(self.bu_stochastic.output_shape, conv, aux_shape=h_shape, transposed=False, in_residual=False,
+                                      dropout=self._p_dropout, **kwargs)
+        else:
+            self.bu_condition = None
+
         # define the generative convolutional blocks with the skip connections
         p_skips = None if self._no_skip else inputs.get('aux', None)
         p_in_shp = shp_cat([self.bu_stochastic.output_shape, self.td_stochastic.output_shape], 1)
@@ -684,9 +686,13 @@ class BivaTopStage(BaseStage):
                          p_dropout=p_dropout, Block=Block, no_skip=no_skip)
         top = True
 
-        bu_shp = input_shape.get('x_bu')
-        td_shp = input_shape.get('x_td')
-        aux_shape = input_shape.get('aux')
+        if 'x' in input_shape.keys():
+            bu_shp = td_shp = input_shape.get('x')
+            aux_shape = None
+        else:
+            bu_shp = input_shape.get('x_bu')
+            td_shp = input_shape.get('x_td')
+            aux_shape = input_shape.get('aux')
 
         # mute skip connections
         if no_skip:
@@ -735,8 +741,13 @@ class BivaTopStage(BaseStage):
         :return: (output data, variational data)
         """
 
-        x_bu = data.pop('x_bu')
-        x_td = data.pop('x_td')
+        if 'x' in data.keys():
+            x = data.get('x')
+            x_bu, x_td = x, x
+        else:
+            x_bu = data.get('x_bu')
+            x_td = data.get('x_td')
+
         aux = data.get('aux', None)
         if self._no_skip:
             aux = None

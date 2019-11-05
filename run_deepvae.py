@@ -16,7 +16,7 @@ from biva.data import get_binmnist_datasets, get_cifar10_datasets
 from biva.evaluation import VariationalInference
 from biva.utils import LowerBoundedExponentialLR, training_step, test_step, summary2logger, save_model, load_model, \
     sample_model, DiscretizedMixtureLogits
-from biva.model import DeepVae, get_deep_vae_mnist, VaeStage, LvaeStage, BivaStage
+from biva.model import DeepVae, get_deep_vae_mnist, get_deep_vae_cifar, VaeStage, LvaeStage, BivaStage
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--root', default='runs/', help='directory to store training logs')
@@ -81,7 +81,7 @@ else:
 
 # define model
 if 'cifar' in opt.dataset:
-    stages, latents = get_deep_vae_mnist()
+    stages, latents = get_deep_vae_cifar()
     features_out = 10 * opt.nr_mix
 else:
     stages, latents = get_deep_vae_mnist()
@@ -98,6 +98,13 @@ model = DeepVae(Stage=Stage,
                 type=opt.model_type,
                 features_out=features_out)
 model.to(opt.device)
+
+# print stages
+print("########################### architecture:")
+for i, (convs, z) in enumerate(zip(stages, latents)):
+    print("Stage =", i)
+    print("Deterministic block:", convs)
+    print(z)
 
 # define freebits
 n_latents = len(latents)
@@ -133,7 +140,7 @@ logging.basicConfig(level=logging.INFO,
                               logging.StreamHandler()])
 train_logger = logging.getLogger('train')
 eval_logger = logging.getLogger('eval')
-M_parameters = (sum(p.numel() for p in model.parameters()) / 1e6)
+M_parameters = (sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6)
 logging.getLogger(run_id).info(f'# Total Number of Parameters: {M_parameters:.3f}M')
 
 # run

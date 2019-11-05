@@ -76,8 +76,9 @@ class DenseNormal(StochasticLayer):
 
         # computes logits
         nz_in = 2 * self.nz
-        self.px2z = NormedDense(tensor_shp, nz_in, weightnorm=weightnorm)
         self.qx2z = NormedDense(tensor_shp, nz_in, weightnorm=weightnorm)
+        if not top:
+            self.px2z = NormedDense(tensor_shp, nz_in, weightnorm=weightnorm)
 
         # project sample back to the original shape
         nz_out = self.nz
@@ -169,8 +170,9 @@ class ConvNormal(StochasticLayer):
 
         # computes logits
         nz_in = 2 * self.nz
-        self.px2z = PaddedNormedConv(tensor_shp, nn.Conv2d(nhid, nz_in, kernel_size), weightnorm=weightnorm)
         self.qx2z = PaddedNormedConv(tensor_shp, nn.Conv2d(nhid, nz_in, kernel_size), weightnorm=weightnorm)
+        if not top:
+            self.px2z = PaddedNormedConv(tensor_shp, nn.Conv2d(nhid, nz_in, kernel_size), weightnorm=weightnorm)
 
         # compute output shape
         nz_out = self.nz

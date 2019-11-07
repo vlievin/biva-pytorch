@@ -6,6 +6,8 @@ import numpy as np
 import torch
 from torch import Tensor, nn
 
+from booster.data import Diagnostic
+
 from .freebits import FreeBits
 from ..utils import batch_reduce, log_sum_exp, detach_to_device
 
@@ -139,5 +141,7 @@ class VariationalInference(object):
                      "bpd": format(bits_per_dim)},
             "info": {"N_eff": format(N_eff), "batch_size": x.size(0)}
         }
+
+        diagnostics = Diagnostic(diagnostics).to(x.device)
 
         return loss.mean(), diagnostics

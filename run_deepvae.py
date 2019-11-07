@@ -5,18 +5,18 @@ import os
 
 import numpy as np
 import torch
+from biva.data import get_binmnist_datasets, get_cifar10_datasets
+from biva.evaluation import VariationalInference
+from biva.model import DeepVae, get_deep_vae_mnist, get_deep_vae_cifar, VaeStage, LvaeStage, BivaStage
+from biva.utils import LowerBoundedExponentialLR, training_step, test_step, summary2logger, save_model, load_model, \
+    sample_model, DiscretizedMixtureLogits
 from booster.data import Aggregator
+from booster.pipeline import BoosterPipeline, DataParallelPipeline
 from booster.utils import EMA
 from torch.distributions import Bernoulli
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-
-from biva.data import get_binmnist_datasets, get_cifar10_datasets
-from biva.evaluation import VariationalInference
-from biva.utils import LowerBoundedExponentialLR, training_step, test_step, summary2logger, save_model, load_model, \
-    sample_model, DiscretizedMixtureLogits
-from biva.model import DeepVae, get_deep_vae_mnist, get_deep_vae_cifar, VaeStage, LvaeStage, BivaStage
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--root', default='runs/', help='directory to store training logs')
@@ -36,6 +36,7 @@ parser.add_argument('--q_dropout', default=0.5, type=float, help='inference mode
 parser.add_argument('--p_dropout', default=0.5, type=float, help='generative model dropout')
 parser.add_argument('--iw_samples', default=1000, type=int, help='number of importance weighted samples for testing')
 parser.add_argument('--id', default='', type=str, help='run id suffix')
+parser.add_argument('--no_skip', action='store_true', help='do not use skip connections')
 
 opt = parser.parse_args()
 
@@ -96,32 +97,46 @@ model = DeepVae(Stage=Stage,
                 q_dropout=opt.q_dropout,
                 p_dropout=opt.p_dropout,
                 type=opt.model_type,
-                features_out=features_out)
-model.to(opt.device)
+                features_out=features_out,
+                no_skip=opt.no_skip)
 
-# print stages
-print("########################### architecture:")
-for i, (convs, z) in enumerate(zip(stages, latents)):
-    print("Stage =", i)
-    print("Deterministic block:", convs)
-    print(z)
+# define the evaluator
+evaluator = VariationalInference(likelihood, iw_samples=1)
 
-# define freebits
-n_latents = len(latents)
-if opt.model_type == 'biva':
-    n_latents = 2 * n_latents - 1
-freebits = [opt.freebits] * n_latents
+# define evaluation model with Exponential Moving Average
+ema = EMA(model, opt.ema)
+
+# define pipelines
+pipeline = BoosterPipeline(model, evaluator)
+pipeline.to(opt.device)
+eval_pipeline = BoosterPipeline(ema.model, evaluator)
+eval_pipeline.to(opt.device)
 
 # data dependent init for weight normalization (automatically done during the first forward pass)
 with torch.no_grad():
     x = next(iter(train_loader)).to(opt.device)
     model(x)
 
-# define evaluation model with Exponential Moving Average
-ema = EMA(model, opt.ema)
+# define data parallel wrapper
+n_gpus = torch.cuda.device_count() if 'cuda' in opt.device else 0
+device_ids = range(n_gpus) if n_gpus else None
+if len(device_ids) > 1 and opt.ema > 0:
+    raise NotImplementedError
+pipeline = DataParallelPipeline(pipeline, device_ids=device_ids)
+eval_pipeline = DataParallelPipeline(eval_pipeline, device_ids=device_ids)
 
-# define the evaluator
-evaluator = VariationalInference(likelihood, iw_samples=1)
+# print stages
+print("########################### architecture:")
+for i, (convs, z) in enumerate(zip(stages, latents)):
+    print("# Stage =", i)
+    print("Deterministic block:", convs)
+    print("Stochastic layer:", z)
+
+# define freebits
+n_latents = len(latents)
+if opt.model_type == 'biva':
+    n_latents = 2 * n_latents - 1
+freebits = [opt.freebits] * n_latents
 
 # optimizer
 optimizer = torch.optim.Adamax(model.parameters(), lr=opt.lr, betas=(0.9, 0.999,))
@@ -150,7 +165,7 @@ for epoch in range(1, opt.epochs + 1):
     train_agg.initialize()
     for x in tqdm(train_loader, desc='train epoch'):
         x = x.to(opt.device)
-        diagnostics = training_step(x, model, evaluator, optimizer, scheduler, **kwargs)
+        diagnostics = training_step(x, pipeline, optimizer, scheduler, **kwargs)
         train_agg.update(diagnostics)
         ema.update()
         global_step += 1
@@ -160,7 +175,7 @@ for epoch in range(1, opt.epochs + 1):
     val_agg.initialize()
     for x in tqdm(valid_loader, desc='valid epoch'):
         x = x.to(opt.device)
-        diagnostics = test_step(x, ema.model, evaluator, **kwargs)
+        diagnostics = test_step(x, eval_pipeline, **kwargs)
         val_agg.update(diagnostics)
     eval_summary = val_agg.data.to('cpu')
 
@@ -183,6 +198,8 @@ sample_model(ema.model, likelihood, logdir, N=100)
 
 # final test
 iw_evaluator = VariationalInference(likelihood, iw_samples=opt.iw_samples)
+test_pipeline = BoosterPipeline(ema.model, iw_evaluator)
+test_pipeline = DataParallelPipeline(test_pipeline, device_ids=device_ids)
 test_agg = Aggregator()
 test_logger = logging.getLogger('test')
 test_logger.info(f"best elbo at step {best_elbo[1]}, epoch {best_elbo[2]}: {best_elbo[0]:.3f} nats")
@@ -190,7 +207,7 @@ test_logger.info(f"best elbo at step {best_elbo[1]}, epoch {best_elbo[2]}: {best
 test_agg.initialize()
 for x in tqdm(test_loader, desc='iw test epoch'):
     x = x.to(opt.device)
-    diagnostics = test_step(x, ema.model, iw_evaluator, **kwargs)
+    diagnostics = test_step(x, test_pipeline, **kwargs)
     test_agg.update(diagnostics)
 test_summary = test_agg.data.to('cpu')
 

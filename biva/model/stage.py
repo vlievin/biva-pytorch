@@ -267,7 +267,7 @@ class VaeStage(BaseStage):
             aux = None
 
         # sample p(z | d)
-        z_p, p_data = self.stochastic(d, inference=False, **kwargs)
+        z_p, p_data = self.stochastic(d, inference=False, sample=posterior is None, **kwargs)
 
         # compute KL(q | p)
         if posterior is not None:
@@ -357,7 +357,7 @@ class LvaeStage(VaeStage):
         d = data.get('d', None)
 
         # sample p(z | d)
-        z_p, p_data = self.stochastic(d, inference=False, **kwargs)
+        z_p, p_data = self.stochastic(d, inference=False, sample=posterior is None, **kwargs)
 
         # sample q(z | h) and compute KL(q | p)
         if posterior is not None:
@@ -567,14 +567,14 @@ class BivaIntermediateStage(BaseStage):
 
             # top-down: compute the posterior using the bottom-up hidden state and top-down hidden state
             # z_td ~ p(d_top)
-            z_td_p, td_p_data = self.td_stochastic(d, inference=False, **kwargs)
+            _, td_p_data = self.td_stochastic(d, inference=False, sample=False, **kwargs)
 
             # merge d_top with h = d_q(x)
             h = td_q_data.get('h')
             h = self.merge(h, aux=d)
 
             # z_td ~ q(z | h)
-            z_td_q, td_q_data = self.td_stochastic(h, inference=True, **kwargs)
+            z_td_q, td_q_data = self.td_stochastic(h, inference=True, sample=True, **kwargs)
 
             # compute log q_bu(z_i | x) - log p_bu(z_i) (+ additional data)
             td_loss_data = self.td_stochastic.loss(td_q_data, td_p_data, **kwargs)
@@ -587,10 +587,10 @@ class BivaIntermediateStage(BaseStage):
 
             # bottom-up: retrieve data from the inference path
             # z_bu ~ p(d_top)
-            z_bu_p, bu_p_data = self.bu_stochastic(d_, inference=False, **kwargs)
+            _, bu_p_data = self.bu_stochastic(d_, inference=False, sample=False, **kwargs)
 
             # compute log q_td(z_i | x, z_{>i}) - log p_td(z_i) (+ additional data)
-            bu_loss_data = self.bu_stochastic.loss(bu_q_data, bu_p_data, **kwargs)
+            bu_loss_data = self.bu_stochastic.loss(bu_q_data, bu_p_data, sample=True, **kwargs)
 
             # merge samples
             z = torch.cat([z_td_q, z_bu_q], 1)
@@ -598,7 +598,7 @@ class BivaIntermediateStage(BaseStage):
         else:
             # sample priors
             # top-down
-            z_td_p, td_p_data = self.td_stochastic(d, inference=False, **kwargs)  # prior
+            z_td_p, td_p_data = self.td_stochastic(d, inference=False, sample=True, **kwargs)  # prior
 
             # conditional BU
             if self.bu_condition is not None:
@@ -607,7 +607,7 @@ class BivaIntermediateStage(BaseStage):
                 d_ = d
 
             # bottom-up
-            z_bu_p, bu_p_data = self.bu_stochastic(d_, inference=False, **kwargs)  # prior
+            z_bu_p, bu_p_data = self.bu_stochastic(d_, inference=False, sample=True, **kwargs)  # prior
 
             bu_loss_data, td_loss_data = {}, {}
             z = torch.cat([z_bu_p, z_td_p], 1)
@@ -781,7 +781,7 @@ class BivaTopStage(BaseStage):
         d = data.get('d', None)
 
         # sample p(z | d)
-        z_p, p_data = self.stochastic(d, inference=False, **kwargs)
+        z_p, p_data = self.stochastic(d, inference=False, sample=posterior is None, **kwargs)
 
         # compute KL(q | p)
         if posterior is not None:

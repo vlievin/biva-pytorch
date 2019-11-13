@@ -17,14 +17,17 @@ class StochasticLayer(nn.Module):
 
     def __init__(self, data: Dict, tensor_shp: Tuple[int], **kwargs: Any):
         super().__init__()
-        pass
+        self._output_shape = tensor_shp
+        self._input_shape = tensor_shp
 
-    def forward(self, x: Optional[Tensor], inference: bool, N: Optional[int] = None, **kwargs) -> Tuple[
+    def forward(self, x: Optional[Tensor], inference: bool, sample: bool = True, N: Optional[int] = None, **kwargs) -> \
+    Tuple[
         Tensor, Dict[str, Any]]:
         """
-        Sample the stochastic layer, if no hidden state is provided, uses the prior.
+        Returns the distribution parametrized by x and sample if `sample1`=True. If no hidden state is provided, uses the prior.
         :param x: hidden state used to computed logits (Optional : None means using the prior)
         :param inference: inference mode
+        :param sample: sample layer
         :param N: number of samples (when sampling from prior)
         :param kwargs: additional args passed ot the stochastic layer
         :return: (projected sample, data)
@@ -112,7 +115,8 @@ class DenseNormal(StochasticLayer):
         logvar = F.softplus(logvar) + self.eps
         return mu, logvar
 
-    def forward(self, x: Optional[Tensor], inference: bool, N: Optional[int] = None, **kwargs) -> Tuple[
+    def forward(self, x: Optional[Tensor], inference: bool, sample: bool = True, N: Optional[int] = None, **kwargs) -> \
+    Tuple[
         Tensor, Dict[str, Any]]:
 
         if x is None:
@@ -123,11 +127,15 @@ class DenseNormal(StochasticLayer):
         # sample layer
         std = logvar.mul(0.5).exp()
         dist = Normal(mu, std)
-        z_ = dist.rsample()
 
-        # project back to hidden state space
-        z = self.z_proj(z_)
-        z = z.view(self.tensor_shp)
+        if sample:
+            z_ = dist.rsample()
+
+            # project back to hidden state space
+            z = self.z_proj(z_)
+            z = z.view(self.tensor_shp)
+        else:
+            z_, z = None, None
 
         return z, {'z': z, 'z_': z_, 'dist': dist}
 
@@ -148,7 +156,7 @@ class ConvNormal(StochasticLayer):
     """
 
     def __init__(self, data: Dict, tensor_shp: Tuple[int], top: bool = False, act: nn.Module = nn.ELU,
-                 learn_prior: bool = False,  weightnorm:bool=True, **kwargs):
+                 learn_prior: bool = False, weightnorm: bool = True, **kwargs):
         super().__init__(data, tensor_shp)
 
         self.eps = 1e-8
@@ -209,7 +217,8 @@ class ConvNormal(StochasticLayer):
     def expand_prior(self, batch_size: int):
         return self.prior.expand(batch_size, *self.prior.shape).chunk(2, dim=1)
 
-    def forward(self, x: Optional[Tensor], inference: bool, N: Optional[int] = None, **kwargs) -> Tuple[
+    def forward(self, x: Optional[Tensor], inference: bool, sample: bool = True, N: Optional[int] = None, **kwargs) -> \
+    Tuple[
         Tensor, Dict[str, Any]]:
 
         if x is None:
@@ -220,8 +229,8 @@ class ConvNormal(StochasticLayer):
         # sample layer
         std = logvar.mul(0.5).exp()
         dist = Normal(mu, std)
-        z_ = dist.rsample()
 
+        z_ = dist.rsample() if sample else None
         # project back (here, no projection)
         z = z_
 

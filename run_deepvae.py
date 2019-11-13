@@ -5,11 +5,6 @@ import os
 
 import numpy as np
 import torch
-from biva.data import get_binmnist_datasets, get_cifar10_datasets
-from biva.evaluation import VariationalInference
-from biva.model import DeepVae, get_deep_vae_mnist, get_deep_vae_cifar, VaeStage, LvaeStage, BivaStage
-from biva.utils import LowerBoundedExponentialLR, training_step, test_step, summary2logger, save_model, load_model, \
-    sample_model, DiscretizedMixtureLogits
 from booster.data import Aggregator
 from booster.pipeline import BoosterPipeline, DataParallelPipeline
 from booster.utils import EMA
@@ -17,6 +12,12 @@ from torch.distributions import Bernoulli
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+
+from biva.data import get_binmnist_datasets, get_cifar10_datasets
+from biva.evaluation import VariationalInference
+from biva.model import DeepVae, get_deep_vae_mnist, get_deep_vae_cifar, VaeStage, LvaeStage, BivaStage
+from biva.utils import LowerBoundedExponentialLR, training_step, test_step, summary2logger, save_model, load_model, \
+    sample_model, DiscretizedMixtureLogits
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--root', default='runs/', help='directory to store training logs')

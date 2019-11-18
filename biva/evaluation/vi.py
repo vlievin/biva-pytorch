@@ -134,7 +134,7 @@ class VariationalInference(object):
         N_eff = torch.sum(ratios, 0) ** 2 / torch.sum(ratios ** 2, 0)
 
         # gather diagnostics
-        bits_per_dim = elbo / math.log(2.) / np.prod(x.size()[1:])
+        bits_per_dim = - elbo / math.log(2.) / np.prod(x.size()[1:])
         format = partial(detach_to_device, device=x.device)
         diagnostics = {
             "loss": {"loss": format(loss), "elbo": format(elbo), "kl": format(kl), "nll": format(nll),

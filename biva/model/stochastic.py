@@ -156,7 +156,7 @@ class ConvNormal(StochasticLayer):
     """
 
     def __init__(self, data: Dict, tensor_shp: Tuple[int], top: bool = False, act: nn.Module = nn.ELU,
-                 learn_prior: bool = False, weightnorm: bool = True, **kwargs):
+                 learn_prior: bool = False, weightnorm: bool = True, log_var_act: Optional[Callable] = nn.Softplus, **kwargs):
         super().__init__(data, tensor_shp)
 
         self.eps = 1e-8
@@ -166,6 +166,9 @@ class ConvNormal(StochasticLayer):
         self.tensor_shp = tensor_shp
         self.input_shp = tensor_shp
         self.act = act()
+        self.log_var_act = log_var_act() if log_var_act is not None else None
+
+        print("#self.log_var_act:", self.log_var_act)
 
         # prior
         if top:
@@ -211,7 +214,9 @@ class ConvNormal(StochasticLayer):
 
         # apply activation to logvar
         mu, logvar = logits.chunk(2, dim=1)
-        logvar = F.softplus(logvar) + self.eps
+        # logvar = F.softplus(logvar) + self.eps
+        if self.log_var_act is not None:
+            logvar = self.log_var_act(logvar)
         return mu, logvar
 
     def expand_prior(self, batch_size: int):

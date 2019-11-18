@@ -29,7 +29,7 @@ class GatedResNet(nn.Module):
         else:
             conv_obj = nn.Conv2d
             deconv_obj = nn.ConvTranspose2d
-            dropout_obj = nn.Dropout2d
+            dropout_obj = nn.Dropout
 
         # some parameters
         C_in = input_shape[1]

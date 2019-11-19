@@ -6,7 +6,7 @@ from torch import nn, Tensor
 
 from .stochastic import StochasticLayer
 from .utils import DataCollector
-from ..layers import GatedResNet
+from ..layers import GatedResNet, AsFeatureMap
 from ..utils import shp_cat
 
 
@@ -459,16 +459,17 @@ class BivaIntermediateStage(BaseStage):
 
         # shape of the output of the inference path and input tensor from the generative path
         top_tensor_shp = self.q_td_convs.output_shape
+        aux_shape = shp_cat([top_tensor_shp, top_tensor_shp], 1)
 
         # define the BU stochastic layer
         bu_top = False if conditional_bu else top
-        self.bu_stochastic = StochasticBlock(bu_stochastic, top_tensor_shp, top=bu_top, **kwargs)
+        self.bu_stochastic = StochasticBlock(bu_stochastic, top_tensor_shp, top=bu_top, bu_proj=True, **kwargs)
+        self.bu_proj = AsFeatureMap(self.bu_stochastic.output_shape, self.bu_stochastic.input_shape, **kwargs)
 
         # define the TD stochastic layer
-        self.td_stochastic = StochasticBlock(td_stochastic, top_tensor_shp, top=top, **kwargs)
+        self.td_stochastic = StochasticBlock(td_stochastic, top_tensor_shp, top=top, bu_proj=False, **kwargs)
 
-        aux_shape = shp_cat([top_tensor_shp, top_tensor_shp], 1)
-        self._q_output_shape = {'x_bu': self.bu_stochastic.output_shape,
+        self._q_output_shape = {'x_bu': self.bu_proj.output_shape,
                                 'x_td': top_tensor_shp,
                                 'aux': aux_shape}
 
@@ -481,22 +482,27 @@ class BivaIntermediateStage(BaseStage):
         h_shape = self._q_output_shape.get('x_td', None) if not self._top else None
         conv = self._convolutions[::-1][-1]
         if isinstance(conv, list) or isinstance(conv, tuple):
-            conv = [conv[0], self._merge_kernel, 1, conv[-1]] # in the original implementation, this depends on the parameters of the above layers
+            conv = [conv[0], self._merge_kernel, 1,
+                    conv[-1]]  # in the original implementation, this depends on the parameters of the above layers
         self.merge = self._Block(h_shape, conv, aux_shape=h_shape, transposed=False, in_residual=True,
-                           dropout=self._p_dropout,
-                           **kwargs)
+                                 dropout=self._p_dropout,
+                                 **kwargs)
 
         # alternative: define the condition p(z_bu | z_td, ...)
         if self._conditional_bu:
-            self.bu_condition = self._Block(self.bu_stochastic.output_shape, conv, aux_shape=h_shape, transposed=False, in_residual=False,
-                                      dropout=self._p_dropout, **kwargs)
+            self.bu_condition = self._Block(self.bu_stochastic.output_shape, conv, aux_shape=h_shape, transposed=False,
+                                            in_residual=False,
+                                            dropout=self._p_dropout, **kwargs)
         else:
             self.bu_condition = None
 
+        # merge latent variables
+        z_shp = shp_cat([self.bu_stochastic.output_shape, self.td_stochastic.output_shape], 1)
+        self.z_proj = AsFeatureMap(z_shp, self.bu_stochastic.input_shape)
+
         # define the generative convolutional blocks with the skip connections
         p_skips = None if self._no_skip else inputs.get('aux', None)
-        p_in_shp = shp_cat([self.bu_stochastic.output_shape, self.td_stochastic.output_shape], 1)
-        self.p_convs = DeterministicBlocks(p_in_shp, self._convolutions[::-1],
+        self.p_convs = DeterministicBlocks(self.z_proj.output_shape, self._convolutions[::-1],
                                            aux_shape=p_skips, transposed=True,
                                            in_residual=False, Block=self._Block, dropout=self._p_dropout, **kwargs)
 
@@ -536,6 +542,7 @@ class BivaIntermediateStage(BaseStage):
         x_bu, _ = self.q_bu_convs(x_bu, aux=bu_aux)
         # z_bu ~ q(x)
         z_bu, bu_q_data = self.bu_stochastic(x_bu, inference=True, **kwargs)
+        z_bu_proj = self.bu_proj(z_bu)
 
         # TD path
         td_aux = [x_bu for _ in range(len(self.q_td_convs))]
@@ -545,7 +552,7 @@ class BivaIntermediateStage(BaseStage):
         # skip connection
         aux = torch.cat([x_bu, x_td], 1)
 
-        return {'x_bu': z_bu, 'x_td': x_td, 'aux': aux}, {'z_bu': z_bu, 'bu': bu_q_data, 'td': td_q_data}
+        return {'x_bu': z_bu_proj, 'x_td': x_td, 'aux': aux}, {'z_bu': z_bu, 'bu': bu_q_data, 'td': td_q_data}
 
     def forward(self, data: Dict, posterior: Optional[dict], debugging: bool = False, **kwargs) -> Tuple[
         Dict, Dict[str, List[Tensor]]]:
@@ -594,6 +601,7 @@ class BivaIntermediateStage(BaseStage):
 
             # merge samples
             z = torch.cat([z_td_q, z_bu_q], 1)
+            z = self.z_proj(z)
 
         else:
             # sample priors
@@ -610,7 +618,10 @@ class BivaIntermediateStage(BaseStage):
             z_bu_p, bu_p_data = self.bu_stochastic(d_, inference=False, sample=True, **kwargs)  # prior
 
             bu_loss_data, td_loss_data = {}, {}
+
+            # merge samples
             z = torch.cat([z_bu_p, z_td_p], 1)
+            z = self.z_proj(z)
 
         # pass through convolutions
         aux = data.get('aux', None)
@@ -709,24 +720,28 @@ class BivaTopStage(BaseStage):
                                               in_residual=in_residual, dropout=q_dropout, Block=Block, **kwargs)
 
         # merge BU and TD paths
+        conv = convolutions[-1]
         self.q_top = Block(shp_cat([self.q_bu_convs.output_shape, self.q_td_convs.output_shape], 1),
-                           [convolutions[-1][0], convolutions[-1][1], 1, convolutions[-1][-1]], dropout=q_dropout,
+                           [conv[0], conv[1], 1, conv[-1]], dropout=q_dropout,
                            residual=True, **kwargs)
         top_tensor_shp = self.q_top.output_shape
 
         # stochastic layer
-        self.stochastic = StochasticBlock(stochastic, top_tensor_shp, top=top, **kwargs)
+        self.stochastic = StochasticBlock(stochastic, top_tensor_shp, top=top, bu_proj=False, **kwargs)
 
         self._q_output_shape = {}  # no output shape (top layer)
-
 
     def _init_generative(self, inputs: Dict[str, Tuple[int]], **kwargs):
         """
         initialize the generative pass given the shape of the tensor from the above generative block.
         """
+
+        # map sample back to a feature map
+        self.z_proj = AsFeatureMap(self.stochastic.output_shape, self.stochastic.input_shape)
+
         # define the generative convolutional blocks with the skip connections
         p_skips = None if self._no_skip else inputs.get('aux', None)
-        self.p_convs = DeterministicBlocks(self.stochastic.output_shape, self._convolutions[::-1],
+        self.p_convs = DeterministicBlocks(self.z_proj.output_shape, self._convolutions[::-1],
                                            aux_shape=p_skips, transposed=True,
                                            in_residual=False, Block=self._Block, dropout=self._p_dropout, **kwargs)
 
@@ -790,6 +805,9 @@ class BivaTopStage(BaseStage):
         else:
             loss_data = {}
             z = z_p
+
+        # project z
+        z = self.z_proj(z)
 
         # pass through convolutions
         aux = data.get('aux', None)

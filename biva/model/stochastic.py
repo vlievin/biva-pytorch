@@ -1,12 +1,11 @@
 from typing import *
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn, Tensor
 from torch.distributions import Normal
 
-from ..layers import PaddedNormedConv, NormedDense, NormedLinear
+from ..layers import PaddedNormedConv, NormedDense
 from ..utils import batch_reduce
 
 
@@ -21,8 +20,8 @@ class StochasticLayer(nn.Module):
         self._input_shape = tensor_shp
 
     def forward(self, x: Optional[Tensor], inference: bool, sample: bool = True, N: Optional[int] = None, **kwargs) -> \
-    Tuple[
-        Tensor, Dict[str, Any]]:
+            Tuple[
+                Tensor, Dict[str, Any]]:
         """
         Returns the distribution parametrized by x and sample if `sample1`=True. If no hidden state is provided, uses the prior.
         :param x: hidden state used to computed logits (Optional : None means using the prior)
@@ -62,7 +61,6 @@ class DenseNormal(StochasticLayer):
                  weightnorm: bool = True, **kwargs):
         super().__init__(data, tensor_shp)
 
-        self._output_shape = tensor_shp
         self._input_shape = tensor_shp
 
         self.eps = 1e-8
@@ -83,10 +81,7 @@ class DenseNormal(StochasticLayer):
         if not top:
             self.px2z = NormedDense(tensor_shp, nz_in, weightnorm=weightnorm)
 
-        # project sample back to the original shape
-        nz_out = self.nz
-        out_shp = np.prod([nhid, *tensor_shp[2:]])
-        self.z_proj = NormedLinear(nz_out, out_shp, weightnorm=weightnorm)
+        self._output_shape = (-1, self.nz)
 
     @property
     def output_shape(self):
@@ -116,8 +111,8 @@ class DenseNormal(StochasticLayer):
         return mu, logvar
 
     def forward(self, x: Optional[Tensor], inference: bool, sample: bool = True, N: Optional[int] = None, **kwargs) -> \
-    Tuple[
-        Tensor, Dict[str, Any]]:
+            Tuple[
+                Tensor, Dict[str, Any]]:
 
         if x is None:
             mu, logvar = self.prior.expand(N, *self.prior.shape).chunk(2, dim=1)
@@ -130,14 +125,10 @@ class DenseNormal(StochasticLayer):
 
         if sample:
             z_ = dist.rsample()
-
-            # project back to hidden state space
-            z = self.z_proj(z_)
-            z = z.view(self.tensor_shp)
         else:
-            z_, z = None, None
+            z_ = None
 
-        return z, {'z': z, 'z_': z_, 'dist': dist}
+        return z_, {'z': z_, 'z_': z_, 'dist': dist}
 
     def loss(self, q_data: Dict[str, Any], p_data: Dict[str, Any], **kwargs: Any) -> Dict[str, List]:
         z_q = q_data.get('z_')
@@ -156,7 +147,8 @@ class ConvNormal(StochasticLayer):
     """
 
     def __init__(self, data: Dict, tensor_shp: Tuple[int], top: bool = False, act: nn.Module = nn.ELU,
-                 learn_prior: bool = False, weightnorm: bool = True, log_var_act: Optional[Callable] = nn.Softplus, **kwargs):
+                 learn_prior: bool = False, weightnorm: bool = True, log_var_act: Optional[Callable] = nn.Softplus,
+                 **kwargs):
         super().__init__(data, tensor_shp)
 
         self.eps = 1e-8
@@ -223,8 +215,8 @@ class ConvNormal(StochasticLayer):
         return self.prior.expand(batch_size, *self.prior.shape).chunk(2, dim=1)
 
     def forward(self, x: Optional[Tensor], inference: bool, sample: bool = True, N: Optional[int] = None, **kwargs) -> \
-    Tuple[
-        Tensor, Dict[str, Any]]:
+            Tuple[
+                Tensor, Dict[str, Any]]:
 
         if x is None:
             mu, logvar = self.expand_prior(N)
@@ -236,10 +228,8 @@ class ConvNormal(StochasticLayer):
         dist = Normal(mu, std)
 
         z_ = dist.rsample() if sample else None
-        # project back (here, no projection)
-        z = z_
 
-        return z, {'z': z, 'z_': z_, 'dist': dist}
+        return z_, {'z': z_, 'z_': z_, 'dist': dist, 'z_bu': z_}
 
     def loss(self, q_data: Dict[str, Any], p_data: Dict[str, Any], **kwargs: Any) -> Dict[str, List]:
         z_q = q_data.get('z_')

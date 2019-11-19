@@ -14,11 +14,11 @@ def append_ellapsed_time(func):
 
 
 @append_ellapsed_time
-def training_step(x, pipeline, optimizer, scheduler, **kwargs):
+def training_step(x, model, evaluator, optimizer, scheduler, **kwargs):
     optimizer.zero_grad()
-    pipeline.train()
+    model.train()
 
-    loss, diagnostics = pipeline(x, **kwargs)
+    loss, diagnostics = evaluator(model, x, **kwargs)
     loss = loss.mean(0)
 
     loss.backward()
@@ -31,9 +31,9 @@ def training_step(x, pipeline, optimizer, scheduler, **kwargs):
 
 @torch.no_grad()
 @append_ellapsed_time
-def test_step(x, pipeline, **kwargs):
-    pipeline.eval()
+def test_step(x, model, evaluator, **kwargs):
+    model.eval()
 
-    loss, diagnostics = pipeline(x, **kwargs)
+    loss, diagnostics = evaluator(model, x, **kwargs)
 
     return diagnostics

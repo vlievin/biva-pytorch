@@ -101,30 +101,18 @@ model = DeepVae(Stage=Stage,
                 features_out=features_out,
                 no_skip=opt.no_skip)
 
+model.to(opt.device)
+
 # define the evaluator
 evaluator = VariationalInference(likelihood, iw_samples=1)
 
 # define evaluation model with Exponential Moving Average
 ema = EMA(model, opt.ema)
 
-# define pipelines
-pipeline = BoosterPipeline(model, evaluator)
-pipeline.to(opt.device)
-eval_pipeline = BoosterPipeline(ema.model, evaluator)
-eval_pipeline.to(opt.device)
-
 # data dependent init for weight normalization (automatically done during the first forward pass)
 with torch.no_grad():
     x = next(iter(train_loader)).to(opt.device)
     model(x)
-
-# define data parallel wrapper
-n_gpus = torch.cuda.device_count() if 'cuda' in opt.device else 0
-device_ids = range(n_gpus) if n_gpus else None
-if len(device_ids) > 1 and opt.ema > 0:
-    raise NotImplementedError
-pipeline = DataParallelPipeline(pipeline, device_ids=device_ids)
-eval_pipeline = DataParallelPipeline(eval_pipeline, device_ids=device_ids)
 
 # print stages
 print("########################### architecture:")
@@ -166,7 +154,7 @@ for epoch in range(1, opt.epochs + 1):
     train_agg.initialize()
     for x in tqdm(train_loader, desc='train epoch'):
         x = x.to(opt.device)
-        diagnostics = training_step(x, pipeline, optimizer, scheduler, **kwargs)
+        diagnostics = training_step(x, model, evaluator, optimizer, scheduler, **kwargs)
         train_agg.update(diagnostics)
         ema.update()
         global_step += 1
@@ -176,7 +164,7 @@ for epoch in range(1, opt.epochs + 1):
     val_agg.initialize()
     for x in tqdm(valid_loader, desc='valid epoch'):
         x = x.to(opt.device)
-        diagnostics = test_step(x, eval_pipeline, **kwargs)
+        diagnostics = test_step(x, ema.model, evaluator, **kwargs)
         val_agg.update(diagnostics)
     eval_summary = val_agg.data.to('cpu')
 
@@ -199,8 +187,6 @@ sample_model(ema.model, likelihood, logdir, N=100)
 
 # final test
 iw_evaluator = VariationalInference(likelihood, iw_samples=opt.iw_samples)
-test_pipeline = BoosterPipeline(ema.model, iw_evaluator)
-test_pipeline = DataParallelPipeline(test_pipeline, device_ids=device_ids)
 test_agg = Aggregator()
 test_logger = logging.getLogger('test')
 test_logger.info(f"best elbo at step {best_elbo[1]}, epoch {best_elbo[2]}: {best_elbo[0]:.3f} nats")
@@ -208,7 +194,7 @@ test_logger.info(f"best elbo at step {best_elbo[1]}, epoch {best_elbo[2]}: {best
 test_agg.initialize()
 for x in tqdm(test_loader, desc='iw test epoch'):
     x = x.to(opt.device)
-    diagnostics = test_step(x, test_pipeline, **kwargs)
+    diagnostics = test_step(x, ema.model, iw_evaluator, **kwargs)
     test_agg.update(diagnostics)
 test_summary = test_agg.data.to('cpu')
 

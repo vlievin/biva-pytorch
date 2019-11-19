@@ -207,16 +207,19 @@ class VaeStage(BaseStage):
 
         # define the stochastic layer
         self.stochastic = StochasticBlock(stochastic, tensor_shp, top=top, **kwargs)
+        self.q_proj = AsFeatureMap(self.stochastic.output_shape, self.stochastic.input_shape)
 
-        self._q_output_shape = {'x': self.stochastic.output_shape, 'aux': tensor_shp}
+        self._q_output_shape = {'x': self.q_proj.output_shape, 'aux': tensor_shp}
 
     def _init_generative(self, inputs: Dict[str, Tuple[int]], **kwargs):
         """
         initialize the generative pass given the shape of the tensor from the above generative block.
         """
+        # project z sample
+        self.p_proj = AsFeatureMap(self.stochastic.output_shape, self.stochastic.input_shape)
         # define the generative convolutional blocks with the skip connections
         p_skips = None if self._no_skip else inputs.get('aux', None)
-        self.p_convs = DeterministicBlocks(self.stochastic.output_shape, self._convolutions[::-1],
+        self.p_convs = DeterministicBlocks(self.p_proj.output_shape, self._convolutions[::-1],
                                            aux_shape=p_skips, transposed=True,
                                            in_residual=False, Block=self._Block, dropout=self._p_dropout, **kwargs)
 
@@ -249,6 +252,7 @@ class VaeStage(BaseStage):
         x, _ = self.q_convs(x, aux)
 
         z, q_data = self.stochastic(x, inference=True, **kwargs)
+        z = self.q_proj(z)
 
         return {'x': z, 'aux': x}, q_data
 
@@ -276,6 +280,9 @@ class VaeStage(BaseStage):
         else:
             loss_data = {}
             z = z_p
+
+        # project z
+        z = self.p_proj(z)
 
         # pass through convolutions
         d, skips = self.p_convs(z, aux=aux)
@@ -314,7 +321,7 @@ class LvaeStage(VaeStage):
         """
         super().__init__(input_shape, convolutions, stochastic, top=top, bottom=bottom, p_dropout=p_dropout,
                          q_dropout=q_dropout, Block=Block, **kwargs)
-
+        self.q_proj = None
         # get the tensor shape of the output of the deterministic path
         top_shape = self._q_output_shape.get('aux')
         # modify the output of the inference path to be only deterministic
@@ -373,6 +380,9 @@ class LvaeStage(VaeStage):
         else:
             loss_data = {}
             z = z_p
+
+        # project z
+        z = self.p_proj(z)
 
         # pass through convolutions
         aux = data.get('aux', None)

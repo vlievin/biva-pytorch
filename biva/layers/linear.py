@@ -146,9 +146,9 @@ class AsFeatureMap(nn.Module):
 
         self._input_shp = input_shape
 
-        if len(input_shape) == 2:
+        if len(input_shape) < len(target_shape):
             out_features = np.prod(target_shape[1:])
-            self.linear = NormedLinear(input_shape[1], out_features, weightnorm=weightnorm)
+            self.linear = NormedDense(input_shape, out_features, weightnorm=weightnorm)
             self._output_shp = target_shape
 
         else:

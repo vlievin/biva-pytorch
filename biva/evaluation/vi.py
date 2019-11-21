@@ -9,6 +9,8 @@ from torch import Tensor, nn
 from .freebits import FreeBits
 from ..utils import batch_reduce, log_sum_exp, detach_to_device
 
+from booster import Diagnostic
+
 
 class VariationalInference(object):
     def __init__(self, likelihood: any, iw_samples: int = 1, auxiliary: Dict[str, float] = {}, **parameters: Any):
@@ -139,5 +141,10 @@ class VariationalInference(object):
                      "bpd": format(bits_per_dim)},
             "info": {"N_eff": format(N_eff), "batch_size": x.size(0)}
         }
+
+        # add kls
+        diagnostics['kl'] = {f'kl-{i}': v.mean() for i, v in enumerate(kls)}
+
+        diagnostics = Diagnostic(diagnostics).to(x.device)
 
         return loss.mean(), diagnostics

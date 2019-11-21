@@ -73,12 +73,6 @@ class DeepVae(nn.Module):
 
         self.stages = nn.ModuleList(stages_)
 
-        # initialize the generative path
-        data = {}
-        for stage in self.stages[::-1]:
-            stage._init_generative(data)
-            data = stage.p_output_shape
-
         if projection is None:
             # output convolution
             tensor_shp = self.stages[0].p_output_shape['d']

@@ -1,7 +1,6 @@
 from typing import *
 
 import torch
-import torch.nn.functional as F
 from torch import nn, Tensor
 from torch.distributions import Normal
 
@@ -58,17 +57,17 @@ class DenseNormal(StochasticLayer):
     """
 
     def __init__(self, data: Dict, tensor_shp: Tuple[int], top: bool = False, act: nn.Module = nn.ELU,
-                 weightnorm: bool = True, **kwargs):
+                 weightnorm: bool = True, log_var_act: Optional[Callable] = nn.Softplus, **kwargs):
         super().__init__(data, tensor_shp)
 
         self._input_shape = tensor_shp
 
         self.eps = 1e-8
-        nhid = tensor_shp[1]
         self.nz = data.get('N')
         self.tensor_shp = tensor_shp
-        self.act = act()
         self.dim = 2
+        self.act = act()
+        self.log_var_act = log_var_act() if log_var_act is not None else None
 
         # stochastic layer and prior
         if top:
@@ -107,7 +106,8 @@ class DenseNormal(StochasticLayer):
 
         # apply activation to logvar
         mu, logvar = logits.chunk(2, dim=1)
-        logvar = F.softplus(logvar) + self.eps
+        if self.log_var_act is not None:
+            logvar = self.log_var_act(logvar)
         return mu, logvar
 
     def forward(self, x: Optional[Tensor], inference: bool, sample: bool = True, N: Optional[int] = None, **kwargs) -> \
@@ -123,15 +123,12 @@ class DenseNormal(StochasticLayer):
         std = logvar.mul(0.5).exp()
         dist = Normal(mu, std)
 
-        if sample:
-            z_ = dist.rsample()
-        else:
-            z_ = None
+        z = dist.rsample() if sample else None
 
-        return z_, {'z': z_, 'z_': z_, 'dist': dist}
+        return z, {'z': z, 'dist': dist}
 
     def loss(self, q_data: Dict[str, Any], p_data: Dict[str, Any], **kwargs: Any) -> Dict[str, List]:
-        z_q = q_data.get('z_')
+        z_q = q_data.get('z')
         q = q_data.get('dist')
         p = p_data.get('dist')
 
@@ -159,8 +156,6 @@ class ConvNormal(StochasticLayer):
         self.input_shp = tensor_shp
         self.act = act()
         self.log_var_act = log_var_act() if log_var_act is not None else None
-
-        print("#self.log_var_act:", self.log_var_act)
 
         # prior
         if top:
@@ -206,7 +201,6 @@ class ConvNormal(StochasticLayer):
 
         # apply activation to logvar
         mu, logvar = logits.chunk(2, dim=1)
-        # logvar = F.softplus(logvar) + self.eps
         if self.log_var_act is not None:
             logvar = self.log_var_act(logvar)
         return mu, logvar
@@ -227,12 +221,12 @@ class ConvNormal(StochasticLayer):
         std = logvar.mul(0.5).exp()
         dist = Normal(mu, std)
 
-        z_ = dist.rsample() if sample else None
+        z = dist.rsample() if sample else None
 
-        return z_, {'z': z_, 'z_': z_, 'dist': dist, 'z_bu': z_}
+        return z, {'z': z, 'dist': dist}
 
     def loss(self, q_data: Dict[str, Any], p_data: Dict[str, Any], **kwargs: Any) -> Dict[str, List]:
-        z_q = q_data.get('z_')
+        z_q = q_data.get('z')
         q = q_data.get('dist')
         p = p_data.get('dist')
 

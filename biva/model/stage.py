@@ -75,10 +75,12 @@ class DeterministicBlocks(nn.Module):
         """
         if aux is None:
             aux = []
+
         for layer in self.layers:
             a = aux.pop() if self._use_skips else None
             x = layer(x, a, **kwargs)
             aux = [x] + aux
+
         return x, aux
 
 
@@ -107,16 +109,7 @@ class BaseStage(nn.Module):
         self._stochastic = stochastic
         self._top = top
         self._bottom = bottom
-        self._q_dropout = q_dropout
-        self._p_dropout = p_dropout
-        self._Block = Block
         self._no_skip = no_skip
-
-    def _init_generative(self, input_shape: Dict[str, Tuple[int]]):
-        """
-        initialize the generative pass given the shape of the tensor from the above generative block.
-        """
-        pass
 
     @property
     def input_shape(self) -> Dict[str, Tuple[int]]:
@@ -211,14 +204,16 @@ class VaeStage(BaseStage):
 
         self._q_output_shape = {'x': self.q_proj.output_shape, 'aux': tensor_shp}
 
-    def _init_generative(self, inputs: Dict[str, Tuple[int]], **kwargs):
-        """
-        initialize the generative pass given the shape of the tensor from the above generative block.
-        """
+        ### GENERATIVE MODEL
+
         # project z sample
         self.p_proj = AsFeatureMap(self.stochastic.output_shape, self.stochastic.input_shape)
+
         # define the generative convolutional blocks with the skip connections
-        p_skips = None if self._no_skip else inputs.get('aux', None)
+        # here we assume the skip connections to be of the same shape as `tensor_shp` : this does not work with
+        # with every configuration of the generative model. Making the arhitecture more general requires to have
+        # a top-down __init__() method such as to take the shapes of the above generative block skip connections as input.
+        p_skips = None if (top or no_skip) else [tensor_shp] * len(convolutions)
         self.p_convs = DeterministicBlocks(self.p_proj.output_shape, self._convolutions[::-1],
                                            aux_shape=p_skips, transposed=True,
                                            in_residual=False, Block=self._Block, dropout=self._p_dropout, **kwargs)
@@ -473,36 +468,33 @@ class BivaIntermediateStage(BaseStage):
 
         # define the BU stochastic layer
         bu_top = False if conditional_bu else top
-        self.bu_stochastic = StochasticBlock(bu_stochastic, top_tensor_shp, top=bu_top, bu_proj=True, **kwargs)
+        self.bu_stochastic = StochasticBlock(bu_stochastic, top_tensor_shp, top=bu_top, **kwargs)
         self.bu_proj = AsFeatureMap(self.bu_stochastic.output_shape, self.bu_stochastic.input_shape, **kwargs)
 
         # define the TD stochastic layer
-        self.td_stochastic = StochasticBlock(td_stochastic, top_tensor_shp, top=top, bu_proj=False, **kwargs)
+        self.td_stochastic = StochasticBlock(td_stochastic, top_tensor_shp, top=top, **kwargs)
 
         self._q_output_shape = {'x_bu': self.bu_proj.output_shape,
                                 'x_td': top_tensor_shp,
                                 'aux': aux_shape}
 
-    def _init_generative(self, inputs: Dict[str, Tuple[int]], **kwargs):
-        """
-        initialize the generative pass given the shape of the tensor from the above generative block.
-        """
+        ### GENERATIVE MODEL
 
         # TD merge layer
         h_shape = self._q_output_shape.get('x_td', None) if not self._top else None
         conv = self._convolutions[::-1][-1]
         if isinstance(conv, list) or isinstance(conv, tuple):
-            conv = [conv[0], self._merge_kernel, 1,
+            conv = [conv[0], merge_kernel, 1,
                     conv[-1]]  # in the original implementation, this depends on the parameters of the above layers
-        self.merge = self._Block(h_shape, conv, aux_shape=h_shape, transposed=False, in_residual=True,
-                                 dropout=self._p_dropout,
-                                 **kwargs)
+        self.merge = Block(h_shape, conv, aux_shape=h_shape, transposed=False, in_residual=True,
+                           dropout=p_dropout,
+                           **kwargs)
 
         # alternative: define the condition p(z_bu | z_td, ...)
-        if self._conditional_bu:
-            self.bu_condition = self._Block(self.bu_stochastic.output_shape, conv, aux_shape=h_shape, transposed=False,
-                                            in_residual=False,
-                                            dropout=self._p_dropout, **kwargs)
+        if conditional_bu:
+            self.bu_condition = Block(self.bu_stochastic.output_shape, conv, aux_shape=h_shape, transposed=False,
+                                      in_residual=False,
+                                      dropout=p_dropout, **kwargs)
         else:
             self.bu_condition = None
 
@@ -511,10 +503,13 @@ class BivaIntermediateStage(BaseStage):
         self.z_proj = AsFeatureMap(z_shp, self.bu_stochastic.input_shape)
 
         # define the generative convolutional blocks with the skip connections
-        p_skips = None if self._no_skip else inputs.get('aux', None)
+        # here we assume the skip connections to be of the same shape as `top_tensor_shape` : this does not work with
+        # with every configuration of the generative model. Making the arhitecture more general requires to have
+        # a top-down __init__() method such as to take the shapes of the above generative block skip connections as input.
+        p_skips = None if (top or no_skip) else [top_tensor_shp] * len(convolutions)
         self.p_convs = DeterministicBlocks(self.z_proj.output_shape, self._convolutions[::-1],
                                            aux_shape=p_skips, transposed=True,
-                                           in_residual=False, Block=self._Block, dropout=self._p_dropout, **kwargs)
+                                           in_residual=False, Block=Block, dropout=p_dropout, **kwargs)
 
         self._p_output_shape = {'d': self.p_convs.output_shape, 'aux': self.p_convs.hidden_shapes}
 
@@ -737,23 +732,20 @@ class BivaTopStage(BaseStage):
         top_tensor_shp = self.q_top.output_shape
 
         # stochastic layer
-        self.stochastic = StochasticBlock(stochastic, top_tensor_shp, top=top, bu_proj=False, **kwargs)
+        self.stochastic = StochasticBlock(stochastic, top_tensor_shp, top=top, **kwargs)
 
         self._q_output_shape = {}  # no output shape (top layer)
 
-    def _init_generative(self, inputs: Dict[str, Tuple[int]], **kwargs):
-        """
-        initialize the generative pass given the shape of the tensor from the above generative block.
-        """
+        ### GENERATIVE MODEL
 
         # map sample back to a feature map
         self.z_proj = AsFeatureMap(self.stochastic.output_shape, self.stochastic.input_shape)
 
         # define the generative convolutional blocks with the skip connections
-        p_skips = None if self._no_skip else inputs.get('aux', None)
+        p_skips = None
         self.p_convs = DeterministicBlocks(self.z_proj.output_shape, self._convolutions[::-1],
                                            aux_shape=p_skips, transposed=True,
-                                           in_residual=False, Block=self._Block, dropout=self._p_dropout, **kwargs)
+                                           in_residual=False, Block=Block, dropout=p_dropout, **kwargs)
 
         self._p_output_shape = {'d': self.p_convs.output_shape, 'aux': self.p_convs.hidden_shapes}
 

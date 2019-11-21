@@ -142,6 +142,9 @@ class VariationalInference(object):
             "info": {"N_eff": format(N_eff), "batch_size": x.size(0)}
         }
 
+        # add kls
+        diagnostics['kl'] = {f'kl-{i}' : v.mean() for i,v in enumerate(kls)}
+
         diagnostics = Diagnostic(diagnostics).to(x.device)
 
         return loss.mean(), diagnostics

@@ -36,6 +36,7 @@ parser.add_argument('--p_dropout', default=0.5, type=float, help='generative mod
 parser.add_argument('--iw_samples', default=1000, type=int, help='number of importance weighted samples for testing')
 parser.add_argument('--id', default='', type=str, help='run id suffix')
 parser.add_argument('--no_skip', action='store_true', help='do not use skip connections')
+parser.add_argument('--log_var_act', default='softplus', type=str, help='activation for the log variance')
 
 opt = parser.parse_args()
 
@@ -45,6 +46,8 @@ np.random.seed(opt.seed)
 run_id = f"{opt.dataset}-{opt.model_type}-seed{opt.seed}"
 if len(opt.id):
     run_id += f"-{opt.id}"
+if opt.log_var_act != 'none':
+    run_id += f"-{opt.log_var_act}"
 logdir = os.path.join(opt.root, run_id)
 if not os.path.exists(logdir):
     os.makedirs(logdir)
@@ -88,6 +91,7 @@ else:
     features_out = tensor_shp[1]
 
 Stage = {'vae': VaeStage, 'lvae': LvaeStage, 'biva': BivaStage}[opt.model_type]
+log_var_act = {'none': None, 'softplus': torch.nn.Softplus, 'tanh': torch.nn.Tanh}[opt.log_var_act]
 model = DeepVae(Stage=Stage,
                 tensor_shp=tensor_shp,
                 stages=stages,
@@ -97,7 +101,8 @@ model = DeepVae(Stage=Stage,
                 p_dropout=opt.p_dropout,
                 type=opt.model_type,
                 features_out=features_out,
-                no_skip=opt.no_skip)
+                no_skip=opt.no_skip,
+                log_var_act=log_var_act)
 
 model.to(opt.device)
 
@@ -145,8 +150,7 @@ eval_logger = logging.getLogger('eval')
 M_parameters = (sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6)
 logging.getLogger(run_id).info(f'# Total Number of Parameters: {M_parameters:.3f}M')
 
-
-
+# init sample
 sample_model(ema.model, likelihood, logdir, writer=valid_writer, global_step=global_step, N=100)
 
 # run
@@ -182,7 +186,7 @@ for epoch in range(1, opt.epochs + 1):
     eval_summary.log(valid_writer, global_step)
 
     # sample model
-    sample_model(ema.model, likelihood, logdir, writer=eval_logger, global_step=global_step, N=100)
+    sample_model(ema.model, likelihood, logdir, writer=valid_writer, global_step=global_step, N=100)
 
 # load best model
 load_model(ema.model, logdir)

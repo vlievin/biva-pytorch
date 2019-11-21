@@ -111,8 +111,7 @@ class DenseNormal(StochasticLayer):
         return mu, logvar
 
     def forward(self, x: Optional[Tensor], inference: bool, sample: bool = True, N: Optional[int] = None, **kwargs) -> \
-            Tuple[
-                Tensor, Dict[str, Any]]:
+    Tuple[Tensor, Dict[str, Any]]:
 
         if x is None:
             mu, logvar = self.prior.expand(N, *self.prior.shape).chunk(2, dim=1)

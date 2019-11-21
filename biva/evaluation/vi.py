@@ -4,9 +4,8 @@ from typing import *
 
 import numpy as np
 import torch
-from torch import Tensor, nn
-
 from booster.data import Diagnostic
+from torch import Tensor, nn
 
 from .freebits import FreeBits
 from ..utils import batch_reduce, log_sum_exp, detach_to_device
@@ -143,7 +142,10 @@ class VariationalInference(object):
         }
 
         # add kls
-        diagnostics['kl'] = {f'kl-{i}' : v.mean() for i,v in enumerate(kls)}
+        diagnostics['kl'] = {f'kl-{i}': v.mean() for i, v in enumerate(kls)}
+
+        # add other params:
+        diagnostics['parameters'] = {k: v for k, v in kwargs.items() if isinstance(v, float)}
 
         diagnostics = Diagnostic(diagnostics).to(x.device)
 

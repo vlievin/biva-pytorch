@@ -214,9 +214,9 @@ class VaeStage(BaseStage):
         # with every configuration of the generative model. Making the arhitecture more general requires to have
         # a top-down __init__() method such as to take the shapes of the above generative block skip connections as input.
         p_skips = None if (top or no_skip) else [tensor_shp] * len(convolutions)
-        self.p_convs = DeterministicBlocks(self.p_proj.output_shape, self._convolutions[::-1],
+        self.p_convs = DeterministicBlocks(self.p_proj.output_shape, convolutions[::-1],
                                            aux_shape=p_skips, transposed=True,
-                                           in_residual=False, Block=self._Block, dropout=self._p_dropout, **kwargs)
+                                           in_residual=False, Block=Block, dropout=p_dropout, **kwargs)
 
         self._p_output_shape = {'d': self.p_convs.output_shape, 'aux': self.p_convs.hidden_shapes}
 
@@ -578,20 +578,20 @@ class BivaIntermediateStage(BaseStage):
             z_bu_q = posterior.get('z_bu')
 
             # top-down: compute the posterior using the bottom-up hidden state and top-down hidden state
-            # z_td ~ p(d_top)
+            # p(z_td | d_top)
             _, td_p_data = self.td_stochastic(d, inference=False, sample=False, **kwargs)
 
             # merge d_top with h = d_q(x)
             h = td_q_data.get('h')
             h = self.merge(h, aux=d)
 
-            # z_td ~ q(z | h)
+            # z_td ~ q(z_td | h_bu_td)
             z_td_q, td_q_data = self.td_stochastic(h, inference=True, sample=True, **kwargs)
 
             # compute log q_bu(z_i | x) - log p_bu(z_i) (+ additional data)
             td_loss_data = self.td_stochastic.loss(td_q_data, td_p_data, **kwargs)
 
-            # conditional BU
+            # conditional BU prior
             if self.bu_condition is not None:
                 d_ = self.bu_condition(z_td_q, aux=d)
             else:
@@ -602,18 +602,17 @@ class BivaIntermediateStage(BaseStage):
             _, bu_p_data = self.bu_stochastic(d_, inference=False, sample=False, **kwargs)
 
             # compute log q_td(z_i | x, z_{>i}) - log p_td(z_i) (+ additional data)
-            bu_loss_data = self.bu_stochastic.loss(bu_q_data, bu_p_data, sample=True, **kwargs)
+            bu_loss_data = self.bu_stochastic.loss(bu_q_data, bu_p_data, **kwargs)
 
             # merge samples
             z = torch.cat([z_td_q, z_bu_q], 1)
-            z = self.z_proj(z)
 
         else:
             # sample priors
             # top-down
             z_td_p, td_p_data = self.td_stochastic(d, inference=False, sample=True, **kwargs)  # prior
 
-            # conditional BU
+            # conditional BU prior
             if self.bu_condition is not None:
                 d_ = self.bu_condition(z_td_p, aux=d)
             else:
@@ -625,8 +624,10 @@ class BivaIntermediateStage(BaseStage):
             bu_loss_data, td_loss_data = {}, {}
 
             # merge samples
-            z = torch.cat([z_bu_p, z_td_p], 1)
-            z = self.z_proj(z)
+            z = torch.cat([z_td_p, z_bu_p], 1)
+
+        # projection
+        z = self.z_proj(z)
 
         # pass through convolutions
         aux = data.get('aux', None)
@@ -797,16 +798,16 @@ class BivaTopStage(BaseStage):
         """
         d = data.get('d', None)
 
-        # sample p(z | d)
-        z_p, p_data = self.stochastic(d, inference=False, sample=posterior is None, **kwargs)
-
-        # compute KL(q | p)
         if posterior is not None:
+            # get p(z | d)
+            _, p_data = self.stochastic(d, inference=False, sample=False, **kwargs)
+
+            # compute KL(q | p)
             loss_data = self.stochastic.loss(posterior, p_data, **kwargs)
             z = posterior.get('z')
         else:
             loss_data = {}
-            z = z_p
+            z, p_data = self.stochastic(d, inference=False, sample=True, **kwargs)
 
         # project z
         z = self.z_proj(z)

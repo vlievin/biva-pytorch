@@ -15,7 +15,7 @@ class StochasticLayer(nn.Module):
 
     def __init__(self, data: Dict, tensor_shp: Tuple[int], **kwargs: Any):
         super().__init__()
-        self._output_shape = tensor_shp
+        self._output_shape = None
         self._input_shape = tensor_shp
 
     def forward(self, x: Optional[Tensor], inference: bool, sample: bool = True, N: Optional[int] = None, **kwargs) -> \
@@ -44,11 +44,11 @@ class StochasticLayer(nn.Module):
 
     @property
     def output_shape(self):
-        raise NotImplementedError
+        return self._output_shape
 
     @property
     def input_shape(self):
-        raise NotImplementedError
+        return self._input_shape
 
 
 class DenseNormal(StochasticLayer):

@@ -25,7 +25,7 @@ parser.add_argument('--model_type', default='biva', help='model type (vae | lvae
 parser.add_argument('--device', default='cuda', help='cuda or cpu')
 parser.add_argument('--num_workers', default=1, type=int, help='number of workers')
 parser.add_argument('--bs', default=48, type=int, help='batch size')
-parser.add_argument('--epochs', default=300, type=int, help='number of epochs')
+parser.add_argument('--epochs', default=500, type=int, help='number of epochs')
 parser.add_argument('--lr', default=2e-3, type=float, help='base learning rate')
 parser.add_argument('--seed', default=42, type=int, help='random seed')
 parser.add_argument('--freebits', default=2.0, type=float, help='freebits per latent variable')

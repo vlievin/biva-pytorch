@@ -1,12 +1,10 @@
 from typing import *
 
-import numpy as np
 import torch
-import torch.nn.functional as F
 from torch import nn, Tensor
 from torch.distributions import Normal
 
-from ..layers import PaddedNormedConv, NormedDense, NormedLinear
+from ..layers import PaddedNormedConv, NormedDense
 from ..utils import batch_reduce
 
 
@@ -17,14 +15,17 @@ class StochasticLayer(nn.Module):
 
     def __init__(self, data: Dict, tensor_shp: Tuple[int], **kwargs: Any):
         super().__init__()
-        pass
+        self._output_shape = None
+        self._input_shape = tensor_shp
 
-    def forward(self, x: Optional[Tensor], inference: bool, N: Optional[int] = None, **kwargs) -> Tuple[
-        Tensor, Dict[str, Any]]:
+    def forward(self, x: Optional[Tensor], inference: bool, sample: bool = True, N: Optional[int] = None, **kwargs) -> \
+            Tuple[
+                Tensor, Dict[str, Any]]:
         """
-        Sample the stochastic layer, if no hidden state is provided, uses the prior.
+        Returns the distribution parametrized by x and sample if `sample1`=True. If no hidden state is provided, uses the prior.
         :param x: hidden state used to computed logits (Optional : None means using the prior)
         :param inference: inference mode
+        :param sample: sample layer
         :param N: number of samples (when sampling from prior)
         :param kwargs: additional args passed ot the stochastic layer
         :return: (projected sample, data)
@@ -43,11 +44,11 @@ class StochasticLayer(nn.Module):
 
     @property
     def output_shape(self):
-        raise NotImplementedError
+        return self._output_shape
 
     @property
     def input_shape(self):
-        raise NotImplementedError
+        return self._input_shape
 
 
 class DenseNormal(StochasticLayer):
@@ -56,18 +57,17 @@ class DenseNormal(StochasticLayer):
     """
 
     def __init__(self, data: Dict, tensor_shp: Tuple[int], top: bool = False, act: nn.Module = nn.ELU,
-                 weightnorm: bool = True, **kwargs):
+                 weightnorm: bool = True, log_var_act: Optional[Callable] = nn.Softplus, **kwargs):
         super().__init__(data, tensor_shp)
 
-        self._output_shape = tensor_shp
         self._input_shape = tensor_shp
 
         self.eps = 1e-8
-        nhid = tensor_shp[1]
         self.nz = data.get('N')
         self.tensor_shp = tensor_shp
-        self.act = act()
         self.dim = 2
+        self.act = act()
+        self.log_var_act = log_var_act() if log_var_act is not None else None
 
         # stochastic layer and prior
         if top:
@@ -76,13 +76,11 @@ class DenseNormal(StochasticLayer):
 
         # computes logits
         nz_in = 2 * self.nz
-        self.px2z = NormedDense(tensor_shp, nz_in, weightnorm=weightnorm)
         self.qx2z = NormedDense(tensor_shp, nz_in, weightnorm=weightnorm)
+        if not top:
+            self.px2z = NormedDense(tensor_shp, nz_in, weightnorm=weightnorm)
 
-        # project sample back to the original shape
-        nz_out = self.nz
-        out_shp = np.prod([nhid, *tensor_shp[2:]])
-        self.z_proj = NormedLinear(nz_out, out_shp, weightnorm=weightnorm)
+        self._output_shape = (-1, self.nz)
 
     @property
     def output_shape(self):
@@ -108,11 +106,12 @@ class DenseNormal(StochasticLayer):
 
         # apply activation to logvar
         mu, logvar = logits.chunk(2, dim=1)
-        logvar = F.softplus(logvar) + self.eps
+        if self.log_var_act is not None:
+            logvar = self.log_var_act(logvar)
         return mu, logvar
 
-    def forward(self, x: Optional[Tensor], inference: bool, N: Optional[int] = None, **kwargs) -> Tuple[
-        Tensor, Dict[str, Any]]:
+    def forward(self, x: Optional[Tensor], inference: bool, sample: bool = True, N: Optional[int] = None, **kwargs) -> \
+    Tuple[Tensor, Dict[str, Any]]:
 
         if x is None:
             mu, logvar = self.prior.expand(N, *self.prior.shape).chunk(2, dim=1)
@@ -122,16 +121,13 @@ class DenseNormal(StochasticLayer):
         # sample layer
         std = logvar.mul(0.5).exp()
         dist = Normal(mu, std)
-        z_ = dist.rsample()
 
-        # project back to hidden state space
-        z = self.z_proj(z_)
-        z = z.view(self.tensor_shp)
+        z = dist.rsample() if sample else None
 
-        return z, {'z': z, 'z_': z_, 'dist': dist}
+        return z, {'z': z, 'dist': dist}
 
     def loss(self, q_data: Dict[str, Any], p_data: Dict[str, Any], **kwargs: Any) -> Dict[str, List]:
-        z_q = q_data.get('z_')
+        z_q = q_data.get('z')
         q = q_data.get('dist')
         p = p_data.get('dist')
 
@@ -147,7 +143,8 @@ class ConvNormal(StochasticLayer):
     """
 
     def __init__(self, data: Dict, tensor_shp: Tuple[int], top: bool = False, act: nn.Module = nn.ELU,
-                 learn_prior: bool = False,  weightnorm:bool=True, **kwargs):
+                 learn_prior: bool = False, weightnorm: bool = True, log_var_act: Optional[Callable] = nn.Softplus,
+                 **kwargs):
         super().__init__(data, tensor_shp)
 
         self.eps = 1e-8
@@ -157,6 +154,7 @@ class ConvNormal(StochasticLayer):
         self.tensor_shp = tensor_shp
         self.input_shp = tensor_shp
         self.act = act()
+        self.log_var_act = log_var_act() if log_var_act is not None else None
 
         # prior
         if top:
@@ -169,8 +167,9 @@ class ConvNormal(StochasticLayer):
 
         # computes logits
         nz_in = 2 * self.nz
-        self.px2z = PaddedNormedConv(tensor_shp, nn.Conv2d(nhid, nz_in, kernel_size), weightnorm=weightnorm)
         self.qx2z = PaddedNormedConv(tensor_shp, nn.Conv2d(nhid, nz_in, kernel_size), weightnorm=weightnorm)
+        if not top:
+            self.px2z = PaddedNormedConv(tensor_shp, nn.Conv2d(nhid, nz_in, kernel_size), weightnorm=weightnorm)
 
         # compute output shape
         nz_out = self.nz
@@ -201,14 +200,16 @@ class ConvNormal(StochasticLayer):
 
         # apply activation to logvar
         mu, logvar = logits.chunk(2, dim=1)
-        logvar = F.softplus(logvar) + self.eps
+        if self.log_var_act is not None:
+            logvar = self.log_var_act(logvar)
         return mu, logvar
 
     def expand_prior(self, batch_size: int):
         return self.prior.expand(batch_size, *self.prior.shape).chunk(2, dim=1)
 
-    def forward(self, x: Optional[Tensor], inference: bool, N: Optional[int] = None, **kwargs) -> Tuple[
-        Tensor, Dict[str, Any]]:
+    def forward(self, x: Optional[Tensor], inference: bool, sample: bool = True, N: Optional[int] = None, **kwargs) -> \
+            Tuple[
+                Tensor, Dict[str, Any]]:
 
         if x is None:
             mu, logvar = self.expand_prior(N)
@@ -218,15 +219,13 @@ class ConvNormal(StochasticLayer):
         # sample layer
         std = logvar.mul(0.5).exp()
         dist = Normal(mu, std)
-        z_ = dist.rsample()
 
-        # project back (here, no projection)
-        z = z_
+        z = dist.rsample() if sample else None
 
-        return z, {'z': z, 'z_': z_, 'dist': dist}
+        return z, {'z': z, 'dist': dist}
 
     def loss(self, q_data: Dict[str, Any], p_data: Dict[str, Any], **kwargs: Any) -> Dict[str, List]:
-        z_q = q_data.get('z_')
+        z_q = q_data.get('z')
         q = q_data.get('dist')
         p = p_data.get('dist')
 

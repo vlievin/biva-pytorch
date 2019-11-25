@@ -138,3 +138,34 @@ class NormedDense(nn.Module):
             self.linear._parameters['bias'].data = self.linear._parameters['bias'].data - m_init * scale_init
             self.initialized = True
             return scale_init[None, :] * (x - m_init[None, :])
+
+
+class AsFeatureMap(nn.Module):
+    def __init__(self, input_shape, target_shape, weightnorm=True, **kwargs):
+        super().__init__()
+
+        self._input_shp = input_shape
+
+        if len(input_shape) < len(target_shape):
+            out_features = np.prod(target_shape[1:])
+            self.linear = NormedDense(input_shape, out_features, weightnorm=weightnorm)
+            self._output_shp = target_shape
+
+        else:
+            self.linear = None
+            self._output_shp = input_shape
+
+    def forward(self, x):
+        if self.linear is None:
+            return x
+
+        x = self.linear(x)
+        return x.view(self.output_shape)
+
+    @property
+    def input_shape(self):
+        return self._input_shp
+
+    @property
+    def output_shape(self):
+        return self._output_shp

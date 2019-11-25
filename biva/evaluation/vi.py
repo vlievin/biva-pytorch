@@ -4,6 +4,7 @@ from typing import *
 
 import numpy as np
 import torch
+from booster.data import Diagnostic
 from torch import Tensor, nn
 
 from .freebits import FreeBits
@@ -134,7 +135,7 @@ class VariationalInference(object):
         N_eff = torch.sum(ratios, 0) ** 2 / torch.sum(ratios ** 2, 0)
 
         # gather diagnostics
-        bits_per_dim = elbo / math.log(2.) / np.prod(x.size()[1:])
+        bits_per_dim = - elbo / math.log(2.) / np.prod(x.size()[1:])
         format = partial(detach_to_device, device=x.device)
         diagnostics = {
             "loss": {"loss": format(loss), "elbo": format(elbo), "kl": format(kl), "nll": format(nll),
@@ -144,6 +145,9 @@ class VariationalInference(object):
 
         # add kls
         diagnostics['kl'] = {f'kl-{i}': v.mean() for i, v in enumerate(kls)}
+
+        # add other params:
+        diagnostics['parameters'] = {k: v for k, v in kwargs.items() if isinstance(v, float)}
 
         diagnostics = Diagnostic(diagnostics).to(x.device)
 

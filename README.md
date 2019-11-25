@@ -2,18 +2,14 @@
 
 Official PyTorch BIVA implementation (BIVA: A Very Deep Hierarchy of Latent Variables forGenerative Modeling) for binarized MNIST. The original Tensorflow implementation can be found [here](https://github.com/larsmaaloee/BIVA).
 
-**For the sake of clarity, this version slightly differs from the original Tensorflow implementation**
-
-**Coming soon: natural images architecture and experiment**
-
-
 ## run the binary MNIST experiment
 
 ```bash
 conda create --name biva python=3.7
 conda activate biva
 pip install -r requirements.txt
-python run_deepvae.py --device cuda --dataset binmnist --q_dropout 0.5 --p_dropout 0.5
+CUDA_VISIBLE_DEVICES=0 python run_deepvae.py --device cuda --dataset binmnist --q_dropout 0.5 --p_dropout 0.5
+CUDA_VISIBLE_DEVICES=0 python run_deepvae.py --device cuda --dataset cifar10 --q_dropout 0.2 --p_dropout 0
 ```
 
 ## Citation

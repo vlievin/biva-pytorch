@@ -1,9 +1,20 @@
 import math
 import os
 
-import matplotlib.pyplot as plt
+import matplotlib.image
+import numpy as np
 import torch
 from torchvision.utils import make_grid
+
+
+def save_img(img, path):
+    def _scale(img):
+        img *= 255
+        return img.astype(np.uint8)
+
+    img = _scale(img)
+
+    matplotlib.image.imsave(path, img)
 
 
 def summary2logger(logger, summary, global_step, epoch, best=None, stats_key='loss'):
@@ -35,7 +46,7 @@ def load_model(model, logdir):
 
 
 @torch.no_grad()
-def sample_model(model, likelihood, logdir, N=100):
+def sample_model(model, likelihood, logdir, global_step=0, writer=None, N=100):
     # sample model
     x_ = model.sample_from_prior(N).get('x_')
     x_ = likelihood(logits=x_).sample()
@@ -44,9 +55,14 @@ def sample_model(model, likelihood, logdir, N=100):
     nrow = math.floor(math.sqrt(N))
     grid = make_grid(x_, nrow=nrow)
 
-    # plot and save
-    plt.figure(figsize=(10, 10))
-    plt.imshow(grid.data.permute(1, 2, 0).cpu().numpy())
-    plt.axis('off')
-    plt.savefig(os.path.join(logdir, "samples.png"))
-    plt.close()
+    # normalize
+    grid -= grid.min()
+    grid /= grid.max()
+
+    # log to tensorboard
+    if writer is not None:
+        writer.add_image('samples', grid, global_step)
+
+    # save the raw image
+    img = grid.data.permute(1, 2, 0).cpu().numpy()
+    matplotlib.image.imsave(os.path.join(logdir, "samples.png"), img)

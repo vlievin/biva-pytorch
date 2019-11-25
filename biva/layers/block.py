@@ -22,8 +22,14 @@ class GatedResNet(nn.Module):
         super(GatedResNet, self).__init__()
 
         # define convolution and transposed convolution objects
-        conv_obj = nn.Conv1d if len(input_shape[2:]) == 1 else nn.Conv2d
-        deconv_obj = nn.ConvTranspose1d if len(input_shape[2:]) == 1 else nn.ConvTranspose2d
+        if len(input_shape[2:]) == 1:
+            conv_obj = nn.Conv1d
+            deconv_obj = nn.ConvTranspose1d
+            dropout_obj = nn.Dropout
+        else:
+            conv_obj = nn.Conv2d
+            deconv_obj = nn.ConvTranspose2d
+            dropout_obj = nn.Dropout
 
         # some parameters
         C_in = input_shape[1]
@@ -37,7 +43,7 @@ class GatedResNet(nn.Module):
         shp = self.conv1.output_shape
 
         # dropout
-        self.dropout = nn.Dropout(dropout) if dropout is not None else dropout
+        self.dropout = dropout_obj(dropout) if dropout is not None else dropout
 
         # conv 2
         if self.transposed and dim[2] > 1:

@@ -1,8 +1,8 @@
 # BIVA (PyTorch)
 
-Official PyTorch BIVA implementation (BIVA: A Very Deep Hierarchy of Latent Variables forGenerative Modeling) for binarized MNIST. The original Tensorflow implementation can be found [here](https://github.com/larsmaaloee/BIVA).
+Official PyTorch BIVA implementation (BIVA: A Very Deep Hierarchy of Latent Variables forGenerative Modeling) for binarized MNIST and CIFAR. The original Tensorflow implementation can be found [here](https://github.com/larsmaaloee/BIVA).
 
-## run the binary MNIST experiment
+## run the experiments
 
 ```bash
 conda create --name biva python=3.7

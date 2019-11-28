@@ -24,6 +24,7 @@ class DeepVae(nn.Module):
     def __init__(self,
                  Stage: Any = BivaStage,
                  tensor_shp: Tuple[int] = (-1, 1, 28, 28),
+                 padded_shp: Optional[Tuple] = None,
                  stages: List[List[Tuple]] = _default_enc,
                  latents: List = _default_z,
                  nonlinearity: str = 'elu',
@@ -38,6 +39,7 @@ class DeepVae(nn.Module):
         Initialize the Deep VAE model.
         :param Stage: stage constructor (VaeStage, LvaeStage, BivaStage)
         :param tensor_shp: Input tensor shape (batch_size, channels, *dimensions)
+        :param padded_shp: pad input tensor to this shape
         :param stages: a list of list of tuple, each tuple describing a convolutional block (filters, stride, kernel_size)
         :param latents: a list describing the stochastic layers for each stage
         :param nonlinearity: activation function (gelu, elu, relu, tanh)
@@ -54,6 +56,16 @@ class DeepVae(nn.Module):
         self.input_tensor_shape = tensor_shp
         self.lambda_init = lambda_init
 
+        # input padding
+        if padded_shp is not None:
+            padding = [[(t - o) // 2, (t - o) // 2] for t, o in zip(padded_shp, tensor_shp[2:])]
+            self.pad = [u for pads in padding for u in pads]
+            self.unpad = [-u for u in self.pad]
+            in_shp = [*tensor_shp[:2], *padded_shp]
+        else:
+            self.pad = None
+            in_shp = tensor_shp
+
         # select activation class
         Act = {'elu': nn.ELU, 'relu': nn.ReLU, 'tanh': nn.Tanh()}[nonlinearity]
 
@@ -61,7 +73,7 @@ class DeepVae(nn.Module):
         stages_ = []
         block_args = {'act': Act, 'q_dropout': q_dropout, 'p_dropout': p_dropout}
 
-        input_shape = {'x': tensor_shp}
+        input_shape = {'x': in_shp}
         for i, (conv_data, z_data) in enumerate(zip(stages, latents)):
             top = i == len(stages) - 1
             bottom = i == 0
@@ -121,6 +133,10 @@ class DeepVae(nn.Module):
         # output convolution
         x = self.projection(x['d'])
 
+        # undo padding
+        if self.pad is not None:
+            x = nn.functional.pad(x, self.unpad)
+
         # sort data: [z1, z2, ..., z_L]
         output_data = output_data.sort()
 
@@ -136,6 +152,9 @@ class DeepVae(nn.Module):
         :param kwargs: additional arguments passed to each stage
         :return: {'x_': reconstruction logits, 'kl': kl for each stage, **auxiliary}
         """
+
+        if self.pad is not None:
+            x = nn.functional.pad(x, self.pad)
 
         if self.lambda_init is not None:
             x = self.lambda_init(x)

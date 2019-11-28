@@ -4,13 +4,11 @@ from typing import *
 
 import numpy as np
 import torch
-from booster.data import Diagnostic
+from booster import Diagnostic
 from torch import Tensor, nn
 
 from .freebits import FreeBits
 from ..utils import batch_reduce, log_sum_exp, detach_to_device
-
-from booster import Diagnostic
 
 
 class VariationalInference(object):
@@ -81,16 +79,17 @@ class VariationalInference(object):
         for k, default_value in self._auxiliary.items():
             # compute value
             value = outputs.get(k, None)
-            value, _ = self.compute_kls(value, None, x.device)
+            if value is not None:
+                value, _ = self.compute_kls(value, None, x.device)
 
-            # get custom weights from kwargs
-            weight = kwargs.get(k, default_value)
+                # get custom weights from kwargs
+                weight = kwargs.get(k, default_value)
 
-            # add to loss
-            loss = loss + weight * value
+                # add to loss
+                loss = loss + weight * value
 
-            # store as a tuple
-            auxiliary[k] = (weight, value)
+                # store as a tuple
+                auxiliary[k] = (weight, value)
 
         return loss, elbo, kls, kl, nll, auxiliary
 
@@ -142,6 +141,10 @@ class VariationalInference(object):
                      "bpd": format(bits_per_dim)},
             "info": {"N_eff": format(N_eff), "batch_size": x.size(0)}
         }
+
+        # add auxiliary
+        for k, v in auxiliary.items():
+            diagnostics['loss'][k] = format(v)
 
         # add kls
         diagnostics['kl'] = {f'kl-{i}': v.mean() for i, v in enumerate(kls)}

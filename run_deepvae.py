@@ -5,7 +5,7 @@ import os
 
 import numpy as np
 import torch
-from biva.data import get_binmnist_datasets, get_cifar10_datasets
+from biva.datasets import get_binmnist_datasets, get_cifar10_datasets
 from biva.evaluation import VariationalInference
 from biva.model import DeepVae, get_deep_vae_mnist, get_deep_vae_cifar, VaeStage, LvaeStage, BivaStage
 from biva.utils import LowerBoundedExponentialLR, training_step, test_step, summary2logger, save_model, load_model, \

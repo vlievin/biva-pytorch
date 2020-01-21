@@ -1,3 +1,3 @@
-__all__ = ["data", "evaluation", "model"]
+__all__ = ["datasets", "evaluation", "model"]
 
 from .model import *

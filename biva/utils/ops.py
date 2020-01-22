@@ -14,7 +14,7 @@ def append_ellapsed_time(func):
 
 
 @append_ellapsed_time
-def training_step(x, model, evaluator, optimizer, scheduler, **kwargs):
+def training_step(x, model, evaluator, optimizer, scheduler=None, **kwargs):
     optimizer.zero_grad()
     model.train()
 

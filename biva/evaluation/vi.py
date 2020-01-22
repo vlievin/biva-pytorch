@@ -143,14 +143,16 @@ class VariationalInference(object):
         }
 
         # add auxiliary
-        for k, v in auxiliary.items():
-            diagnostics['loss'][k] = format(v)
+        for k, (weight, value) in auxiliary.items():
+            diagnostics['loss'][k] = format(value.mean())
 
         # add kls
         diagnostics['kl'] = {f'kl-{i}': v.mean() for i, v in enumerate(kls)}
 
         # add other params:
-        diagnostics['parameters'] = {k: v for k, v in kwargs.items() if isinstance(v, float)}
+        def _check_type(v):
+            return isinstance(v, float) or (isinstance(v, Tensor) and v.dim() == 0)
+        diagnostics['parameters'] = {k: v for k, v in kwargs.items() if _check_type(v)}
 
         diagnostics = Diagnostic(diagnostics).to(x.device)
 

@@ -114,6 +114,7 @@ ema = EMA(model, opt.ema)
 
 # data dependent init for weight normalization (automatically done during the first forward pass)
 with torch.no_grad():
+    model.train()
     x = next(iter(train_loader)).to(opt.device)
     model(x)
 

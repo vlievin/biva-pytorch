@@ -4,7 +4,7 @@ from typing import *
 
 import numpy as np
 import torch
-from booster import Diagnostic
+from booster.data import Diagnostic
 from torch import Tensor, nn
 
 from .freebits import FreeBits

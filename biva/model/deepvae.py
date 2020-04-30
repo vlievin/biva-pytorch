@@ -180,7 +180,7 @@ class DeepVae(nn.Module):
 class BIVA(DeepVae):
     def __init__(self, **kwargs):
         kwargs.pop('Stage', None)
-        super().__init__(Stage=VaeStage, **kwargs)
+        super().__init__(Stage=BivaStage, **kwargs)
 
 
 class LVAE(DeepVae):
@@ -192,4 +192,4 @@ class LVAE(DeepVae):
 class VAE(DeepVae):
     def __init__(self, **kwargs):
         kwargs.pop('Stage', None)
-        super().__init__(Stage=BivaStage, **kwargs)
+        super().__init__(Stage=VaeStage, **kwargs)

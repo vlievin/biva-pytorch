@@ -102,7 +102,7 @@ class PaddedNormedConv(nn.Module):
             weightnorm (bool): use weight normalization
         """
         super(PaddedNormedConv, self).__init__()
-        self.initialized = False
+        self.register_buffer("initialized", torch.tensor(False))
 
         # paddding
         self._input_shp = tensor_shape
@@ -145,7 +145,7 @@ class PaddedNormedConv(nn.Module):
         return self._output_shp
 
     def init_parameters(self, x, init_scale=0.05, eps=1e-8):
-        self.initialized = True
+        self.initialized = True + self.initialized
         if self.weightnorm:
             # initial values
             self.conv._parameters['weight_v'].data.normal_(mean=0, std=init_scale)

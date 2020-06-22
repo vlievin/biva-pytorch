@@ -17,7 +17,7 @@ class NormedLinear(nn.Module):
             dim (int): dimension to aply transformation to
             weightnorm (bool): use weight normalization
         """
-        self.initialized = False
+        self.register_buffer("initialized", torch.tensor(False))
         self._in_features = in_features
         self._out_features = out_features
         self.dim = dim
@@ -78,7 +78,7 @@ class NormedLinear(nn.Module):
             self.linear._parameters['weight_g'].data = self.linear._parameters['weight_g'].data * scale_init.view(
                 self.linear._parameters['weight_g'].data.size())
             self.linear._parameters['bias'].data = self.linear._parameters['bias'].data - m_init * scale_init
-            self.initialized = True
+            self.initialized = True + self.initialized
             return scale_init[None, :] * (x - m_init[None, :])
 
 
@@ -95,7 +95,7 @@ class NormedDense(nn.Module):
             out_features (int): number of output features
             weight (bool): use weight normalization
         """
-        self.initialized = False
+        self.register_buffer("initialized", torch.tensor(False))
         self._input_shp = tensor_shape
         self.input_features = int(np.prod(tensor_shape[1:]))
         self._output_shp = (-1, out_features)
@@ -136,7 +136,7 @@ class NormedDense(nn.Module):
             self.linear._parameters['weight_g'].data = self.linear._parameters['weight_g'].data * scale_init.view(
                 self.linear._parameters['weight_g'].data.size())
             self.linear._parameters['bias'].data = self.linear._parameters['bias'].data - m_init * scale_init
-            self.initialized = True
+            self.initialized = True + self.initialized
             return scale_init[None, :] * (x - m_init[None, :])
 
 

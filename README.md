@@ -70,11 +70,12 @@ stages = [
 # build the model
 model = VAE(tensor_shp=(-1, 1, 28, 28), stages=stages, latents=z, dropout=0.5)
 
-# forward pass
+# forward pass and data-dependent initialization
 x = torch.empty((8, 1, 28, 28)).uniform_().bernoulli()
 data = model(x)  # data = {'x_' : p(x|z), z \sim q(z|x), 'kl': [kl_z1, kl_z2]}
 
 # sample from prior
 data = model.sample_from_prior(N=16)  # data = {'x_' : p(x|z), z \sim p(z)}
 samples = Bernoulli(logits=data['x_']).sample()
+
 ```

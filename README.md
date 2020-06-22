@@ -2,7 +2,7 @@
 
 Official PyTorch BIVA implementation (BIVA: A Very Deep Hierarchy of Latent Variables forGenerative Modeling) for binarized MNIST and CIFAR. The original Tensorflow implementation can be found [here](https://github.com/larsmaaloee/BIVA).
 
-## run the experiments
+## Run the Experiments
 
 ```bash
 conda create --name biva python=3.7
@@ -27,7 +27,7 @@ CUDA_VISIBLE_DEVICES=0 python run_deepvae.py --dataset cifar10 --q_dropout 0.2 -
 
 ## Pip package
 
-### install requirements
+### Install the Requirements
 
 * `pytorch 1.3.0`
 * `torchvision`
@@ -35,13 +35,13 @@ CUDA_VISIBLE_DEVICES=0 python run_deepvae.py --dataset cifar10 --q_dropout 0.2 -
 * `tensorboard`
 * `booster-pytorch==0.0.2`
 
-### install package
+### Install as a Package
 
 ```bash
 pip install git+https://github.com/vlievin/biva-pytorch.git
 ```
 
-### build deep VAEs
+### Build Deep VAEs
 
 ```python
 import torch

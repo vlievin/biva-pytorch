@@ -18,7 +18,7 @@ def training_step(x, model, evaluator, optimizer, scheduler=None, **kwargs):
     optimizer.zero_grad()
     model.train()
 
-    loss, diagnostics = evaluator(model, x, **kwargs)
+    loss, diagnostics, output = evaluator(model, x, **kwargs)
     loss = loss.mean(0)
 
     loss.backward()
@@ -34,6 +34,6 @@ def training_step(x, model, evaluator, optimizer, scheduler=None, **kwargs):
 def test_step(x, model, evaluator, **kwargs):
     model.eval()
 
-    loss, diagnostics = evaluator(model, x, **kwargs)
+    loss, diagnostics, output = evaluator(model, x, **kwargs)
 
     return diagnostics

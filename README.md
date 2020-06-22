@@ -8,8 +8,8 @@ Official PyTorch BIVA implementation (BIVA: A Very Deep Hierarchy of Latent Vari
 conda create --name biva python=3.7
 conda activate biva
 pip install -r requirements.txt
-CUDA_VISIBLE_DEVICES=0 python run_deepvae.py --device cuda --dataset binmnist --q_dropout 0.5 --p_dropout 0.5
-CUDA_VISIBLE_DEVICES=0 python run_deepvae.py --device cuda --dataset cifar10 --q_dropout 0.2 --p_dropout 0
+CUDA_VISIBLE_DEVICES=0 python run_deepvae.py --dataset binmnist --q_dropout 0.5 --p_dropout 0.5 --device cuda
+CUDA_VISIBLE_DEVICES=0 python run_deepvae.py --dataset cifar10 --q_dropout 0.2 --p_dropout 0 --device cuda
 ```
 
 ## Citation
@@ -33,7 +33,7 @@ CUDA_VISIBLE_DEVICES=0 python run_deepvae.py --device cuda --dataset cifar10 --q
 * `torchvision`
 * `matplotlib`
 * `tensorboard`
-* `booster-pytorch==0.0.1`
+* `booster-pytorch==0.0.2`
 
 ### install package
 

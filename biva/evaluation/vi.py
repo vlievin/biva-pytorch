@@ -4,7 +4,7 @@ from typing import *
 
 import numpy as np
 import torch
-from booster.data import Diagnostic
+from booster import Diagnostic
 from torch import Tensor, nn
 
 from .freebits import FreeBits
@@ -39,8 +39,9 @@ class VariationalInference(object):
         # set kls and freebits as lists
         if not isinstance(kls, list):
             kls = [kls]
-            if freebits is not None and not isinstance(freebits, list):
-                freebits = [freebits]
+
+        if freebits is not None and not isinstance(freebits, list):
+            freebits = [freebits for _ in kls]
 
         # apply freebits to each
         if freebits is not None:
@@ -93,7 +94,7 @@ class VariationalInference(object):
 
         return loss, elbo, kls, kl, nll, auxiliary
 
-    def __call__(self, model: nn.Module, x: Tensor, **kwargs: Any) -> Tuple[Tensor, Dict]:
+    def __call__(self, model: nn.Module, x: Tensor, **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
         """
         Process inputs using model and compute loss, ELBO and diagnostics.
         :param model: model to evaluate
@@ -110,7 +111,8 @@ class VariationalInference(object):
         iw_kls = torch.zeros((self._iw_samples, x.size(0)), device=x.device, dtype=torch.float)
         iw_nlls = torch.zeros((self._iw_samples, x.size(0)), device=x.device, dtype=torch.float)
 
-        # Effective Sample size (requires KL to be computed as an estimate)
+        # Effective Sample size
+        # w_i = p(x, z_i) / q(z_i | x)
         ratios = torch.zeros((self._iw_samples, x.size(0)), device=x.device, dtype=torch.float)
 
         # feed forward pass
@@ -121,14 +123,14 @@ class VariationalInference(object):
             # compute VI elbo
             loss, elbo, kls, kl, nll, auxiliary = self.compute_elbo(x, outputs, **kwargs)
             iw_elbos[k, :] = elbo
-            iw_kls[k, :] = - kl
-            iw_nlls[k, :] = - nll
-            ratios[k, :] = torch.exp(-kl)
+            iw_kls[k, :] = kl
+            iw_nlls[k, :] = nll
+            ratios[k, :] = elbo.exp()
 
         if self._iw_samples > 1:
             elbo = log_sum_exp(iw_elbos, dim=0, sum_op=torch.mean)
-            kl = - log_sum_exp(iw_kls, dim=0, sum_op=torch.mean)
-            nll = - log_sum_exp(iw_nlls, dim=0, sum_op=torch.mean)
+            kl = iw_kls.mean(0)
+            nll = iw_nlls.mean(0)
 
         # Compute effective sample size
         N_eff = torch.sum(ratios, 0) ** 2 / torch.sum(ratios ** 2, 0)
@@ -144,7 +146,7 @@ class VariationalInference(object):
 
         # add auxiliary
         for k, (weight, value) in auxiliary.items():
-            diagnostics['loss'][k] = format(value.mean())
+            diagnostics['loss'][k] = format(value.float().mean())
 
         # add kls
         diagnostics['kl'] = {f'kl-{i}': v.mean() for i, v in enumerate(kls)}
@@ -152,8 +154,9 @@ class VariationalInference(object):
         # add other params:
         def _check_type(v):
             return isinstance(v, float) or (isinstance(v, Tensor) and v.dim() == 0)
+
         diagnostics['parameters'] = {k: v for k, v in kwargs.items() if _check_type(v)}
 
         diagnostics = Diagnostic(diagnostics).to(x.device)
 
-        return loss.mean(), diagnostics
+        return loss.mean(), diagnostics, outputs

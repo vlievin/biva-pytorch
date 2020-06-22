@@ -2,6 +2,7 @@ import argparse
 import json
 import logging
 import os
+import pickle
 
 import numpy as np
 import torch
@@ -10,8 +11,8 @@ from biva.evaluation import VariationalInference
 from biva.model import DeepVae, get_deep_vae_mnist, get_deep_vae_cifar, VaeStage, LvaeStage, BivaStage
 from biva.utils import LowerBoundedExponentialLR, training_step, test_step, summary2logger, save_model, load_model, \
     sample_model, DiscretizedMixtureLogits
-from booster.data import Aggregator
-from booster.utils import EMA
+from booster import Aggregator
+from booster.utils import EMA, logging_sep, available_device
 from torch.distributions import Bernoulli
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -22,7 +23,7 @@ parser.add_argument('--root', default='runs/', help='directory to store training
 parser.add_argument('--data_root', default='data/', help='directory to store the dataset')
 parser.add_argument('--dataset', default='binmnist', help='binmnist')
 parser.add_argument('--model_type', default='biva', help='model type (vae | lvae | biva)')
-parser.add_argument('--device', default='cuda', help='cuda or cpu')
+parser.add_argument('--device', default='auto', help='auto, cuda, cpu')
 parser.add_argument('--num_workers', default=1, type=int, help='number of workers')
 parser.add_argument('--bs', default=48, type=int, help='batch size')
 parser.add_argument('--epochs', default=500, type=int, help='number of epochs')
@@ -37,6 +38,7 @@ parser.add_argument('--iw_samples', default=1000, type=int, help='number of impo
 parser.add_argument('--id', default='', type=str, help='run id suffix')
 parser.add_argument('--no_skip', action='store_true', help='do not use skip connections')
 parser.add_argument('--log_var_act', default='softplus', type=str, help='activation for the log variance')
+parser.add_argument('--beta', default=1.0, type=float, help='Beta parameter (Beta-VAE)')
 
 opt = parser.parse_args()
 
@@ -46,8 +48,8 @@ np.random.seed(opt.seed)
 run_id = f"{opt.dataset}-{opt.model_type}-seed{opt.seed}"
 if len(opt.id):
     run_id += f"-{opt.id}"
-if opt.log_var_act != 'none':
-    run_id += f"-{opt.log_var_act}"
+if opt.beta != 1:
+    run_id += f"-{opt.beta}"
 logdir = os.path.join(opt.root, run_id)
 if not os.path.exists(logdir):
     os.makedirs(logdir)
@@ -77,10 +79,7 @@ test_loader = DataLoader(test_dataset, batch_size=2 * opt.bs, shuffle=True, pin_
 tensor_shp = (-1, *train_dataset[0].shape)
 
 # define likelihood
-if 'cifar' in opt.dataset:
-    likelihood = DiscretizedMixtureLogits(opt.nr_mix)
-else:
-    likelihood = Bernoulli
+likelihood = {'cifar': DiscretizedMixtureLogits(opt.nr_mix), 'binmnist': Bernoulli}[opt.dataset]
 
 # define model
 if 'cifar' in opt.dataset:
@@ -92,19 +91,26 @@ else:
 
 Stage = {'vae': VaeStage, 'lvae': LvaeStage, 'biva': BivaStage}[opt.model_type]
 log_var_act = {'none': None, 'softplus': torch.nn.Softplus, 'tanh': torch.nn.Tanh}[opt.log_var_act]
-model = DeepVae(Stage=Stage,
-                tensor_shp=tensor_shp,
-                stages=stages,
-                latents=latents,
-                nonlinearity='elu',
-                q_dropout=opt.q_dropout,
-                p_dropout=opt.p_dropout,
-                type=opt.model_type,
-                features_out=features_out,
-                no_skip=opt.no_skip,
-                log_var_act=log_var_act)
+hyperparameters = {
+    'Stage': Stage,
+    'tensor_shp': tensor_shp,
+    'stages': stages,
+    'latents': latents,
+    'nonlinearity': 'elu',
+    'q_dropout': opt.q_dropout,
+    'p_dropout': opt.p_dropout,
+    'type': opt.model_type,
+    'features_out': features_out,
+    'no_skip': opt.no_skip,
+    'log_var_act': log_var_act
+}
+# save hyper parameters for easy loading
+pickle.dump(hyperparameters, open(os.path.join(logdir, "hyperparameters.p"), "wb"))
 
-model.to(opt.device)
+# instantiate the model and move to target device
+model = DeepVae(**hyperparameters)
+device = available_device() if opt.device == 'auto' else opt.device
+model.to(device)
 
 # define the evaluator
 evaluator = VariationalInference(likelihood, iw_samples=1)
@@ -115,15 +121,16 @@ ema = EMA(model, opt.ema)
 # data dependent init for weight normalization (automatically done during the first forward pass)
 with torch.no_grad():
     model.train()
-    x = next(iter(train_loader)).to(opt.device)
+    x = next(iter(train_loader)).to(device)
     model(x)
 
 # print stages
-print("########################### architecture:")
-for i, (convs, z) in enumerate(zip(stages, latents)):
-    print("# Stage =", i)
-    print("Deterministic block:", convs)
+print(logging_sep("=") + "\nGenerative model:\n" + logging_sep("-"))
+for i, (convs, z) in reversed(list(enumerate(zip(stages, latents)))):
+    print(f"Stage #{i + 1}")
     print("Stochastic layer:", z)
+    print("Deterministic block:", convs)
+print(logging_sep("="))
 
 # define freebits
 n_latents = len(latents)
@@ -136,7 +143,7 @@ optimizer = torch.optim.Adamax(model.parameters(), lr=opt.lr, betas=(0.9, 0.999,
 scheduler = LowerBoundedExponentialLR(optimizer, 0.999999, 0.0001)
 
 # logging utils
-kwargs = {'beta': 1.0, 'freebits': freebits}
+kwargs = {'beta': opt.beta, 'freebits': freebits}
 best_elbo = (-1e20, 0, 0)
 global_step = 1
 train_agg = Aggregator()
@@ -150,6 +157,7 @@ train_logger = logging.getLogger('train')
 eval_logger = logging.getLogger('eval')
 M_parameters = (sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6)
 logging.getLogger(run_id).info(f'# Total Number of Parameters: {M_parameters:.3f}M')
+print(logging_sep() + f"\nLogging directory: {logdir}\n" + logging_sep())
 
 # init sample
 sample_model(ema.model, likelihood, logdir, writer=valid_writer, global_step=global_step, N=100)
@@ -160,7 +168,7 @@ for epoch in range(1, opt.epochs + 1):
     # training
     train_agg.initialize()
     for x in tqdm(train_loader, desc='train epoch'):
-        x = x.to(opt.device)
+        x = x.to(device)
         diagnostics = training_step(x, model, evaluator, optimizer, scheduler, **kwargs)
         train_agg.update(diagnostics)
         ema.update()
@@ -170,7 +178,7 @@ for epoch in range(1, opt.epochs + 1):
     # evaluation
     val_agg.initialize()
     for x in tqdm(valid_loader, desc='valid epoch'):
-        x = x.to(opt.device)
+        x = x.to(device)
         diagnostics = test_step(x, ema.model, evaluator, **kwargs)
         val_agg.update(diagnostics)
     eval_summary = val_agg.data.to('cpu')
@@ -203,7 +211,7 @@ test_logger.info(f"best elbo at step {best_elbo[1]}, epoch {best_elbo[2]}: {best
 
 test_agg.initialize()
 for x in tqdm(test_loader, desc='iw test epoch'):
-    x = x.to(opt.device)
+    x = x.to(device)
     diagnostics = test_step(x, ema.model, iw_evaluator, **kwargs)
     test_agg.update(diagnostics)
 test_summary = test_agg.data.to('cpu')

@@ -9,3 +9,4 @@ build/
 .ipynb_checkpoints/
 
 *.ipynb
+/output/

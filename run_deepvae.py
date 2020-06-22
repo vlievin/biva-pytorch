@@ -79,7 +79,7 @@ test_loader = DataLoader(test_dataset, batch_size=2 * opt.bs, shuffle=True, pin_
 tensor_shp = (-1, *train_dataset[0].shape)
 
 # define likelihood
-likelihood = {'cifar': DiscretizedMixtureLogits(opt.nr_mix), 'binmnist': Bernoulli}[opt.dataset]
+likelihood = {'cifar10': DiscretizedMixtureLogits(opt.nr_mix), 'binmnist': Bernoulli}[opt.dataset]
 
 # define model
 if 'cifar' in opt.dataset:

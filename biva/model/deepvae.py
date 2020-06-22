@@ -8,8 +8,6 @@ from .stage import VaeStage, LvaeStage, BivaStage
 from .utils import DataCollector
 from ..layers import PaddedNormedConv
 
-_default_enc, _default_z = get_deep_vae_mnist()
-
 
 class DeepVae(nn.Module):
     """
@@ -25,8 +23,8 @@ class DeepVae(nn.Module):
                  Stage: Any = BivaStage,
                  tensor_shp: Tuple[int] = (-1, 1, 28, 28),
                  padded_shp: Optional[Tuple] = None,
-                 stages: List[List[Tuple]] = _default_enc,
-                 latents: List = _default_z,
+                 stages: List[List[Tuple]] = None,
+                 latents: List = None,
                  nonlinearity: str = 'elu',
                  q_dropout: float = 0.,
                  p_dropout: float = 0.,
@@ -52,6 +50,7 @@ class DeepVae(nn.Module):
         :param kwargs: additional arugments passed to each stage
         """
         super().__init__()
+        stages, latents = self.get_default_architecture(stages, latents)
 
         self.input_tensor_shape = tensor_shp
         self.lambda_init = lambda_init
@@ -97,6 +96,15 @@ class DeepVae(nn.Module):
         else:
             tensor_shp = self.stages[0].forward_shape['d']
             self.projection = projection(tensor_shp)
+
+    def get_default_architecture(self, stages, latents):
+        if stages is None:
+            stages, _ = get_deep_vae_mnist()
+
+        if latents is None:
+            _, latens = get_deep_vae_mnist()
+
+        return stages, latents
 
     def infer(self, x: torch.Tensor, **kwargs: Any) -> List[Dict]:
         """

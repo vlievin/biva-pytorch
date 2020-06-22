@@ -30,8 +30,8 @@ def summary2logger(logger, summary, global_step, epoch, best=None, stats_key='lo
         logger.info(message)
 
 
-def save_model(model, eval_summary, global_step, epoch, best_elbo, logdir):
-    elbo = eval_summary['loss']['elbo']
+def save_model(model, eval_summary, global_step, epoch, best_elbo, logdir, key='elbo'):
+    elbo = eval_summary['loss'][key]
     prev_elbo, *_ = best_elbo
     if elbo > prev_elbo:
         best_elbo = (elbo, global_step, epoch)
